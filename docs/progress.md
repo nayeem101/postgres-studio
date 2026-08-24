@@ -2,7 +2,7 @@
 
 Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-and-plan.md) §§6–7a. Update this file when a task is actually verified ([agent-workflow.md](agent-workflow.md)).
 
-**Status:** Bootstrap complete. Phase 0 not started.
+**Status:** Bootstrap complete. Phase 0 in progress (test foundation done).
 
 | Phase | Status |
 |---|---|
@@ -59,8 +59,10 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
 - [ ] Unit test foundation for deterministic SQL and metadata logic  
   **Acceptance:** `bun test tests/unit` covers identifier quoting, cursor logic, metadata normalization, and FK graph traversal without a database
 
-- [ ] Integration test fixture and real Postgres test harness  
-  **Acceptance:** `bun test tests/integration` applies `tests/fixtures/seed.sql` to `$TEST_DATABASE_URL` and covers self-FK + composite-FK reads
+- [x] Integration test fixture and real Postgres test harness  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun test tests/integration` → 6 pass / 0 fail against `postgres://…@localhost:5432/pg_studio_test` (docker `postgres:16-alpine`); `bun run seed:test-db` reseeds and redacts the URL  
+  **Notes:** seed covers self-FK (`employees.manager_id`), composite PK/FK (`orders`↔`order_items`), cascade (`customers`↔`addresses`). Harness asserts FK reads, orphan-insert rejection, cascade delete. Root `seed:test-db` script runs from repo root so Bun loads root `.env` (`--filter` changes cwd). Seed refuses to run when `TEST_DATABASE_URL === DATABASE_URL`.
 
 ---
 

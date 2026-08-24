@@ -12,7 +12,7 @@
     "test:e2e:ui": "playwright test --ui",
     "playwright:install": "playwright install chromium",
     "typecheck": "bun run --filter '*' typecheck",
-    "seed:test-db": "bun run --filter @pg-studio/server seed:test-db"
+    "seed:test-db": "bun apps/server/src/seed.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
