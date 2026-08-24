@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "dev",
+      "type": "shell",
+      "command": "bun run dev",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "test",
+      "type": "shell",
+      "command": "bun test",
+      "problemMatcher": [],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "typecheck",
+      "type": "shell",
+      "command": "bun run typecheck",
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "e2e",
+      "type": "shell",
+      "command": "bun run test:e2e",
+      "problemMatcher": [],
+      "group": "test"
+    },
+    {
+      "label": "seed-db",
+      "type": "shell",
+      "command": "bun run seed:test-db",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "playwright": {
+      "command": "playwright-mcp",
+      "args": [
+        "--headless",
+        "--browser=chrome",
+        "--allowed-hosts=localhost,127.0.0.1"
+      ]
+    }
+  }
+}

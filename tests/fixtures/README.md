@@ -1,0 +1,2 @@
+-- Seeded test schema for Phase 0+ (self-FK, composite FK, cascade).
+-- Applied only to $TEST_DATABASE_URL. Not implemented until Phase 0.

@@ -1,0 +1,4 @@
+-- Placeholder. Phase 0 will create:
+--   employees.manager_id → employees.id (self-FK)
+--   composite PK/FK pair
+--   parent/child with ON DELETE CASCADE

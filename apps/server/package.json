@@ -1,0 +1,17 @@
+{
+  "name": "@pg-studio/server",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "seed:test-db": "bun src/seed.ts"
+  },
+  "dependencies": {
+    "@pg-studio/db": "workspace:*",
+    "@pg-studio/api": "workspace:*"
+  }
+}

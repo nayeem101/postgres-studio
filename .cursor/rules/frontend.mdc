@@ -1,0 +1,15 @@
+---
+description: React SPA, Eden Treaty, and TanStack conventions
+globs: apps/web/**
+alwaysApply: false
+---
+
+# Frontend
+
+- Fetch via Eden Treaty + TanStack Query. Do not duplicate API types by hand.
+- Grid: TanStack Table + virtualization. Keyset pagination, not offset, for large tables.
+- Edits use pending-changes-then-save, not per-cell auto-commit.
+- FK drawer: “References” (outgoing) and “Referenced by” (incoming, grouped, paginated, count badges). Cap self-FK depth; keep breadcrumb history.
+- Inferred relationships (name heuristics) must be visually distinct from real `pg_constraint` FKs.
+- Tailwind for layout. Prefer small focused components over a heavy UI kit in v1.
+- When `@tanstack/react-table` / `@tanstack/react-query` are installed, load package skills via `npx @tanstack/intent@latest list` / `load`.

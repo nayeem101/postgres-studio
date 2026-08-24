@@ -1,0 +1,13 @@
+---
+description: Safety, SQL, and tracker rules for every session
+alwaysApply: true
+---
+
+# Safety and workflow
+
+- Read `AGENTS.md` and the next unchecked task in `docs/progress.md` before changing code.
+- Use `$TEST_DATABASE_URL` only. Never `DROP`/`TRUNCATE`/`DELETE`/`UPDATE` against `$DATABASE_URL` without explicit human confirmation.
+- Parameterized queries only (`Bun.sql` tagged templates or bound params). Quote catalog-validated identifiers; never concatenate untrusted names.
+- Snapshot-before-mutation on every write path. Do not mark Phase 3 tasks complete without recorded human tests.
+- Do not invent completion. Tracker updates need date, evidence (command), and notes. Generated code is not evidence.
+- Do not add a divergent `CLAUDE.md` or copy architecture into per-tool instruction files.

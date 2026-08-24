@@ -1,0 +1,14 @@
+---
+description: Elysia, Bun.sql, introspection, and rollback conventions
+globs: apps/server/**,packages/db/**,packages/api/**
+alwaysApply: false
+---
+
+# Backend
+
+- Keep Postgres access in `packages/db`. Apps call that module; they do not open ad-hoc `Bun.sql` connections in route handlers for catalog or mutation SQL.
+- Introspect with `pg_catalog` (`pg_class`, `pg_attribute`, `pg_constraint`, `pg_index`, `pg_enum`) plus `information_schema` where it is clearer. Schema-aware from day one (not only `public`).
+- TypeBox schemas on public routes; export `typeof app` from `packages/api` for Eden Treaty. Do not hand-maintain a parallel client types file.
+- Rollback code (`apps/server` backup + `packages/db` mutations): two-phase capture (`pending` → mutate → `confirmed`/`failed`). Cascade walk reuses incoming-FK queries. Restore is topological and transactional.
+- Identifier allowlisting: resolve names against cached introspection before building dynamic `FROM`/`SET` clauses.
+- Load Postgres, Bun, and Elysia skills for this work. Run the `code-review` skill on rollback/cascade before Phase 3 is done.

@@ -1,0 +1,11 @@
+{
+  "name": "@pg-studio/api",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "bun build --no-bundle ./src/index.ts"
+  }
+}

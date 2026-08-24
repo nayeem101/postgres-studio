@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "skills": {
+    "Bun Configuring a monorepo using workspaces": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-guides-install-workspaces/SKILL.md",
+      "computedHash": "e8fe3964a66cb814a7e5a39bf258ec72a8bf8a49be4eae35d1dba9180614b7a4"
+    },
+    "Bun Environment Variables": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-runtime-environment-variables/SKILL.md",
+      "computedHash": "207d98d425307a540e5c41f87e3a97f1b81564e10445b8f86dade702902317ed"
+    },
+    "Bun Parse command-line arguments": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-guides-process-argv/SKILL.md",
+      "computedHash": "7a88d85511bf0e8a4e28cbbf33ca790b451c84de2bd1b56da1bea1161c54ab29"
+    },
+    "Bun Routing": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-runtime-http-routing/SKILL.md",
+      "computedHash": "de05e1995fef7c998f0fa464d5f0dfb4f12aba95d7b0ed049ab01d77163bbd9b"
+    },
+    "Bun SQL": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-runtime-sql/SKILL.md",
+      "computedHash": "c38015b176f0dc159d8271baa97fa9e89bd8b75696ee50061326808c7c6dfb16"
+    },
+    "Bun SQLite": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-runtime-sqlite/SKILL.md",
+      "computedHash": "71ff705deba4816ba9f5dc67923de3ea7d886db4d48d6cd52ca9d5958ec8a461"
+    },
+    "Bun Server": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-runtime-http-server/SKILL.md",
+      "computedHash": "ece90e1600ac1261b25c0f0ed0c1080587c40489049f21f63b9a917c70139913"
+    },
+    "Bun TypeScript": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-typescript/SKILL.md",
+      "computedHash": "0fa025c6c550991f45b1d640e95c5a4ea21d2af415291466d76aee7fce4fc8be"
+    },
+    "Bun Workspaces": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-pm-workspaces/SKILL.md",
+      "computedHash": "332e6e64ab65b1281145f724302ce9f1a5e9794d5549155567b29862f46b910f"
+    },
+    "Bun Writing tests": {
+      "source": "jarle/bun-skills",
+      "sourceType": "github",
+      "skillPath": "skills/bun-test-writing-tests/SKILL.md",
+      "computedHash": "2a257e67d31ad0581bd6e493153c9a159a6894bbbc5c51517be4e8ab9de192d9"
+    },
+    "code-review": {
+      "source": "anthropics/knowledge-work-plugins",
+      "sourceType": "github",
+      "skillPath": "engineering/skills/code-review/SKILL.md",
+      "computedHash": "2b1ac29c8d03ecdd6dbb9d0ebc8cdb05965151bedceed36f262546785b3123bc"
+    },
+    "elysiajs": {
+      "source": "elysiajs/skills",
+      "sourceType": "github",
+      "skillPath": "elysia/SKILL.md",
+      "computedHash": "1f8cdb3c66e6127bd7e31fd5478bf912d976059896629cc58eec031f9bae0c74"
+    },
+    "supabase-postgres-best-practices": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
+      "computedHash": "128fac78002d916c8ca908245d398e634f540d8bcf20915b2b2359aeb18eba59"
+    },
+    "tailwind-theme-builder": {
+      "source": "jezweb/claude-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/frontend/skills/tailwind-theme-builder/SKILL.md",
+      "computedHash": "e8a9ac674406de2e6db9cbb09107a4d4e4ce02debbf556a4251bea73add0da12"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
+    }
+  }
+}
