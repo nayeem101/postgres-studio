@@ -48,9 +48,9 @@ describe("integration harness", () => {
     expect(counts[0]).toEqual({
       employees: 4,
       orders: 3,
-      order_items: 5,
+      order_items: 6,
       customers: 2,
-      addresses: 3,
+      addresses: 4,
     });
   });
 

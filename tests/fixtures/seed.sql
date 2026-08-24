@@ -104,7 +104,8 @@ insert into public.order_items (id, shop_id, order_no, product, quantity) values
   (2, 1, 100, 'usb hub', 1),
   (3, 1, 101, 'mouse', 1),
   (4, 2, 100, 'monitor', 1),
-  (5, 2, 100, 'cable', 3);
+  (5, 2, 100, 'cable', 3),
+  (6, 1, 100, 'dock', 1);
 
 insert into public.customers (id, email) values
   (1, 'ada@example.com'),
@@ -113,7 +114,8 @@ insert into public.customers (id, email) values
 insert into public.addresses (id, customer_id, line) values
   (1, 1, '12 Analytical St'),
   (2, 1, '34 Mark I Ave'),
-  (3, 2, '56 Compiler Rd');
+  (3, 2, '56 Compiler Rd'),
+  (4, 1, '78 Second St');
 
 insert into app.projects (id, code, budget) values
   (1, 'ALPHA', 1000.00),

@@ -78,7 +78,7 @@ describe("POST .../save", () => {
 
   test("delete cascades through FKs while snapshots capture the parent", async () => {
     const addressesBefore = await db`select count(*)::int as n from public.addresses`;
-    expect(addressesBefore[0]?.n).toBe(3);
+    expect(addressesBefore[0]?.n).toBe(4);
 
     const res = await customersSave().post({
       updates: [],

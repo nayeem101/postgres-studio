@@ -17,6 +17,9 @@ import {
   listRows,
   listTables,
   listUniqueConstraints,
+  pickDisplayColumn,
+  resolveIncomingReferences,
+  resolveOutgoingReferences,
 } from "@pg-studio/db";
 import { BackupStore, type SnapshotInput } from "./backup";
 
@@ -474,6 +477,119 @@ export function createServerApp(config: ServerAppConfig) {
             400: ApiErrorSchema,
             404: ApiErrorSchema,
             500: t.Object({ error: t.String(), batchId: t.String() }),
+          },
+        },
+      )
+      .post(
+        "/api/schemas/:schema/tables/:table/references/outgoing",
+        async ({ params, body }) => {
+          const [columns, pks] = await Promise.all([
+            listColumns(db, params.schema, params.table),
+            listPrimaryKeys(db),
+          ]);
+          const pkColumns =
+            pks.find(p => p.schema === params.schema && p.table === params.table)?.columns ?? [];
+          if (pkColumns.length === 0 || body.pkValues.length !== pkColumns.length) {
+            return status(400, { error: "pkValues must match the table primary key" });
+          }
+          const select = compileSelectByPkTuples({
+            schema: params.schema,
+            table: params.table,
+            pkColumns,
+            tuples: [body.pkValues],
+          });
+          const rows = await db.unsafe(select.text, select.params);
+          if (rows.length === 0) {
+            return status(404, { error: "row not found" });
+          }
+          const row = rows[0] as Record<string, string | number | boolean | null>;
+          const references = await resolveOutgoingReferences(db, {
+            schema: params.schema,
+            table: params.table,
+            pkColumns,
+            row,
+          });
+          return { outgoing: references };
+        },
+        {
+          params: t.Object({ schema: IdentParam, table: IdentParam }),
+          body: t.Object({ pkValues: PkValuesSchema }),
+          response: {
+            200: t.Object({
+              outgoing: t.Array(
+                t.Object({
+                  constraintName: t.String(),
+                  parentSchema: t.String(),
+                  parentTable: t.String(),
+                  preview: t.Nullable(
+                    t.Object({
+                      row: t.Record(t.String(), CellSchema),
+                      displayColumn: t.String(),
+                    }),
+                  ),
+                }),
+              ),
+            }),
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+          },
+        },
+      )
+      .post(
+        "/api/schemas/:schema/tables/:table/references/incoming",
+        async ({ params, body }) => {
+          const [columns, pks] = await Promise.all([
+            listColumns(db, params.schema, params.table),
+            listPrimaryKeys(db),
+          ]);
+          const pkColumns =
+            pks.find(p => p.schema === params.schema && p.table === params.table)?.columns ?? [];
+          if (pkColumns.length === 0 || body.pkValues.length !== pkColumns.length) {
+            return status(400, { error: "pkValues must match the table primary key" });
+          }
+          const select = compileSelectByPkTuples({
+            schema: params.schema,
+            table: params.table,
+            pkColumns,
+            tuples: [body.pkValues],
+          });
+          const rows = await db.unsafe(select.text, select.params);
+          if (rows.length === 0) {
+            return status(404, { error: "row not found" });
+          }
+          const groups = await resolveIncomingReferences(db, {
+            schema: params.schema,
+            table: params.table,
+            pkColumns,
+            row: rows[0] as Record<string, string | number | boolean | null>,
+            offset: body.offset ?? 0,
+            limit: body.limit ?? 10,
+          });
+          return { groups };
+        },
+        {
+          params: t.Object({ schema: IdentParam, table: IdentParam }),
+          body: t.Object({
+            pkValues: PkValuesSchema,
+            offset: t.Optional(t.Number({ minimum: 0 })),
+            limit: t.Optional(t.Number({ minimum: 1, maximum: 100 })),
+          }),
+          response: {
+            200: t.Object({
+              groups: t.Array(
+                t.Object({
+                  constraintName: t.String(),
+                  childSchema: t.String(),
+                  childTable: t.String(),
+                  childColumns: t.Array(t.String()),
+                  totalCount: t.Integer(),
+                  rows: t.Array(t.Record(t.String(), CellSchema)),
+                  nextOffset: t.Nullable(t.Integer()),
+                }),
+              ),
+            }),
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
           },
         },
       )

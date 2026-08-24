@@ -50,3 +50,12 @@ export {
   compileSelectByPkTuples,
   compileUpdate,
 } from "./mutations";
+export {
+  pickDisplayColumn,
+  resolveIncomingReferences,
+  resolveOutgoingReferences,
+  type IncomingGroup,
+  type IncomingOptions,
+  type OutgoingReference,
+  type ResolveOptions,
+} from "./references";
