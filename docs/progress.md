@@ -45,9 +45,10 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
   **Evidence:** `bun apps/server/src/cli.ts --url "$TEST_DATABASE_URL"` printed 5 relations with columns/flags; `--json` round-trips the same payload; `mysql://` URL rejected exit 2 with usage; unknown arg exit 2. Catalog functions covered by `bun run test` (83 pass / 0 fail)  
   **Notes:** `packages/db/src/catalog.ts` holds introspection (bind parameters only, identifiers quoted). System/temp/toast schemas excluded. Identity columns render as `DEFAULT (identity)` (`is_identity` folded into `hasDefault`). URLs are password-redacted before printing. Root `test` script scoped to `tests/unit tests/integration` so Playwright specs aren't collected by bun.
 
-- [ ] FK query both directions on seeded DB (self-FK + composite FK)  
-  **Acceptance:** outgoing + incoming rows match seed  
-  **Verify:** script or test against `tests/fixtures` seed
+- [x] FK query both directions on seeded DB (self-FK + composite FK)  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run test` → 90 pass / 0 fail; `tests/integration/fks.test.ts` asserts outgoing self-FK (`employees.manager_id`, SET NULL), composite FK (`order_items[shop_id,order_no] → orders`, CASCADE), incoming for `orders`/`employees`, and empty results for leaf tables  
+  **Notes:** `packages/db/src/fks.ts` via `pg_constraint` with positional pairing of `conkey/confkey` (composite columns stay aligned); direction filters verified against fixture. Gotcha recorded: reusing a shared SQL fragment across concurrent queries misapplied appended WHERE — fragments are now built fresh per call.
 
 - [ ] Minimal Elysia app: schema validation on one endpoint, hot reload, path params, TypeBox errors  
   **Acceptance:** invalid body returns validation error; valid body 200

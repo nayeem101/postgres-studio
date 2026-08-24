@@ -25,3 +25,4 @@ export {
   type WalkStep,
 } from "./fk-graph";
 export { listColumns, listTables } from "./catalog";
+export { listIncomingFks, listOutgoingFks, listTableFks } from "./fks";
