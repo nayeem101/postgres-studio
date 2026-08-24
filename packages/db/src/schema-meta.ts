@@ -36,6 +36,22 @@ export interface EnumMeta {
   values: string[];
 }
 
+type RawRow = Record<string, unknown>;
+
+function asString(row: RawRow, key: string): string {
+  const v = row[key];
+  if (typeof v !== "string") throw new Error(`catalog field "${key}" must be a string`);
+  return v;
+}
+
+function asStringArray(row: RawRow, key: string): string[] {
+  const v = row[key];
+  if (!Array.isArray(v) || v.some(x => typeof x !== "string")) {
+    throw new Error(`catalog field "${key}" must be a string array`);
+  }
+  return v as string[];
+}
+
 /** Primary keys across all schemas; composite keys keep column order. */
 export async function listPrimaryKeys(db: SQL): Promise<PrimaryKeyMeta[]> {
   const rows = await db`
@@ -54,10 +70,10 @@ export async function listPrimaryKeys(db: SQL): Promise<PrimaryKeyMeta[]> {
     group by ns.nspname, tbl.relname, tbl.oid
     order by ns.nspname, tbl.relname
   `;
-  return rows.map(r => ({
-    schema: r.schema as string,
-    table: r.table as string,
-    columns: r.columns as string[],
+  return rows.map((r: RawRow) => ({
+    schema: asString(r, "schema"),
+    table: asString(r, "table"),
+    columns: asStringArray(r, "columns"),
   }));
 }
 
@@ -80,11 +96,11 @@ export async function listUniqueConstraints(db: SQL): Promise<UniqueConstraintMe
     group by con.conname, ns.nspname, tbl.relname, tbl.oid
     order by ns.nspname, tbl.relname, con.conname
   `;
-  return rows.map(r => ({
-    schema: r.schema as string,
-    table: r.table as string,
-    name: r.name as string,
-    columns: r.columns as string[],
+  return rows.map((r: RawRow) => ({
+    schema: asString(r, "schema"),
+    table: asString(r, "table"),
+    name: asString(r, "name"),
+    columns: asStringArray(r, "columns"),
   }));
 }
 
@@ -109,11 +125,11 @@ export async function listIndexes(db: SQL): Promise<IndexMeta[]> {
     group by idx_ns.nspname, tbl.relname, idx.relname, i.indisunique, i.indpred, idx.oid
     order by idx_ns.nspname, tbl.relname, idx.relname
   `;
-  return rows.map(r => ({
-    schema: r.schema as string,
-    table: r.table as string,
-    name: r.name as string,
-    columns: r.columns as string[],
+  return rows.map((r: RawRow) => ({
+    schema: asString(r, "schema"),
+    table: asString(r, "table"),
+    name: asString(r, "name"),
+    columns: asStringArray(r, "columns"),
     isUnique: r.isUnique === true,
     isPartial: r.isPartial === true,
   }));
@@ -134,9 +150,9 @@ export async function listEnums(db: SQL): Promise<EnumMeta[]> {
     group by n.nspname, t.typname, t.oid
     order by n.nspname, t.typname
   `;
-  return rows.map(r => ({
-    schema: r.schema as string,
-    name: r.name as string,
-    values: r.values as string[],
+  return rows.map((r: RawRow) => ({
+    schema: asString(r, "schema"),
+    name: asString(r, "name"),
+    values: asStringArray(r, "values"),
   }));
 }

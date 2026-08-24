@@ -79,8 +79,10 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
 - [ ] Elysia app + Vite SPA scaffold; localhost launch; Bun can serve built SPA  
   **Acceptance:** `bun run dev` opens UI against local API
 
-- [ ] TypeBox schemas for table list, column metadata, row payloads (drive Eden Treaty)  
-  **Acceptance:** `packages/api` exports `typeof app`; web imports Treaty types
+- [x] TypeBox schemas for table list, column metadata, row payloads (drive Eden Treaty)  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run test` → 116 pass / 0 fail. `tests/integration/api.test.ts` drives `treaty(createServerApp(...))` against the seeded DB (tables/enums/detail/404/422). Type-level assertions in `tests/types/eden.test-d.ts` pass under the root tsc gate, incl. `@ts-expect-error` negatives; literal unions (`kind`, FK actions) flow through treaty  
+  **Notes:** `apps/server/src/server-app.ts` — factory takes `{databaseUrl}` (env: `PG_STUDIO_DB_URL`, falls back to `TEST_DATABASE_URL`), decorates a Bun SQL pool closed via `.onStop`. Routes: `/health`, `/api/tables`, `/api/enums`, `/api/schemas/:schema/tables/:table` (detail = columns + PK + uniques + both FK directions; 404 on unknown relation). Ident params pattern-validated (`422` on unsafe chars). Row payloads land with the rows endpoint task.
 
 - [x] Schema introspection: tables, views, columns, types, PK/FK/unique/index, enums, multi-schema  
   **Done:** 2026-08-24  
