@@ -26,3 +26,13 @@ export {
 } from "./fk-graph";
 export { listColumns, listTables } from "./catalog";
 export { listIncomingFks, listOutgoingFks, listTableFks } from "./fks";
+export {
+  listEnums,
+  listIndexes,
+  listPrimaryKeys,
+  listUniqueConstraints,
+  type EnumMeta,
+  type IndexMeta,
+  type PrimaryKeyMeta,
+  type UniqueConstraintMeta,
+} from "./schema-meta";

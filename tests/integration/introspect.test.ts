@@ -14,16 +14,29 @@ afterAll(async () => {
 });
 
 describe("listTables", () => {
-  test("returns seeded tables sorted by schema and name", async () => {
+  test("returns seeded relations across schemas", async () => {
     const tables = await listTables(db);
-    expect(tables.map(t => `${t.schema}.${t.name}`)).toEqual([
-      "public.addresses",
-      "public.customers",
-      "public.employees",
-      "public.order_items",
-      "public.orders",
-    ]);
-    expect(tables.every(t => t.kind === "table")).toBe(true);
+    const keys = tables.map(t => `${t.schema}.${t.name}`);
+    expect(new Set(keys)).toEqual(
+      new Set([
+        "app.project_stats",
+        "app.projects",
+        "app.tasks",
+        "public.addresses",
+        "public.customers",
+        "public.employees",
+        "public.links",
+        "public.order_items",
+        "public.orders",
+      ]),
+    );
+  });
+
+  test("views are distinguished from base tables", async () => {
+    const tables = await listTables(db);
+    const stats = tables.find(t => t.name === "project_stats");
+    expect(stats).toMatchObject({ schema: "app", kind: "view" });
+    expect(tables.find(t => t.name === "orders")).toMatchObject({ schema: "public", kind: "table" });
   });
 
   test("excludes system schemas", async () => {

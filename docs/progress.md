@@ -82,8 +82,10 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
 - [ ] TypeBox schemas for table list, column metadata, row payloads (drive Eden Treaty)  
   **Acceptance:** `packages/api` exports `typeof app`; web imports Treaty types
 
-- [ ] Schema introspection: tables, views, columns, types, PK/FK/unique/index, enums, multi-schema  
-  **Acceptance:** non-`public` schema appears; enums listed
+- [x] Schema introspection: tables, views, columns, types, PK/FK/unique/index, enums, multi-schema  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run test` → 110 pass / 0 fail. `tests/integration/schema-meta.test.ts` asserts composite PK order (`orders[shop_id,order_no]`), unique constraints in both schemas, secondary/partial index flags, enum values in declaration order, `USER-DEFINED`/`task_status` udt on the status column; view vs table kind asserted in `introspect.test.ts`  
+  **Notes:** new `packages/db/src/schema-meta.ts` (listPrimaryKeys/listUniqueConstraints/listIndexes/listEnums). Seed fixture extended with `app` schema, `task_status` enum, view, partial index, and cross-schema FK `public.links → app.projects`. Bug caught by tests: module initially used global `sql` instead of the injected connection — all catalog access now flows through the passed `db`.
 
 - [ ] Sidebar table/view list  
   **Acceptance:** click selects table and loads grid

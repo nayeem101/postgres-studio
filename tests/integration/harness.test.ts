@@ -15,18 +15,25 @@ afterAll(async () => {
 describe("integration harness", () => {
   test("seed applies cleanly and tables are present", async () => {
     const rows = await db`
-      select table_name
+      select table_schema as schema, table_name as name
       from information_schema.tables
-      where table_schema = 'public'
-      order by table_name
+      where table_schema in ('public', 'app')
+      order by table_schema, table_name
     `;
-    expect(rows.map((r: { table_name: string }) => r.table_name)).toEqual([
-      "addresses",
-      "customers",
-      "employees",
-      "order_items",
-      "orders",
-    ]);
+    const keys = rows.map((r: { schema: string; name: string }) => `${r.schema}.${r.name}`);
+    expect(new Set(keys)).toEqual(
+      new Set([
+        "app.project_stats",
+        "app.projects",
+        "app.tasks",
+        "public.addresses",
+        "public.customers",
+        "public.employees",
+        "public.links",
+        "public.order_items",
+        "public.orders",
+      ]),
+    );
   });
 
   test("row counts match the fixture", async () => {

@@ -2,7 +2,9 @@
 
 - `seed.sql` — deterministic schema + data applied only to `$TEST_DATABASE_URL`.
   Covers: self-FK (`employees.manager_id`), composite PK/FK (`orders` ↔ `order_items`),
-  cascade pair (`customers` ↔ `addresses`).
+  cascade pair (`customers` ↔ `addresses`), multi-schema (`app.projects`, `app.tasks`,
+  `app.project_stats` view), enum (`app.task_status`), cross-schema FK
+  (`public.links` → `app.projects`), unique constraints, secondary + partial indexes.
 - `apply-seed.ts` — executes `seed.sql` on an open connection (`db.file`).
 
 Reseed manually with `bun run seed:test-db`, or call `createSeededTestDb()` from
