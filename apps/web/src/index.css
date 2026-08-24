@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* Studio theme — dark-first, minimal token set (Tailwind v4 four-step pattern). */
+:root {
+  --background: hsl(220 13% 9%);
+  --foreground: hsl(210 20% 92%);
+  --muted: hsl(220 10% 16%);
+  --muted-foreground: hsl(215 12% 62%);
+  --border: hsl(218 11% 22%);
+  --primary: hsl(221.2 83.2% 53.3%);
+  --primary-foreground: hsl(210 40% 98%);
+  --danger: hsl(0 72% 56%);
+}
+
+:root.light {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(222.2 84% 4.9%);
+  --muted: hsl(210 40% 96%);
+  --muted-foreground: hsl(215 16% 42%);
+  --border: hsl(214 32% 88%);
+  --primary: hsl(221.2 83.2% 53.3%);
+  --primary-foreground: hsl(210 40% 98%);
+  --danger: hsl(0 72% 51%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-danger: var(--danger);
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}

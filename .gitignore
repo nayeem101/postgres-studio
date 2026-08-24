@@ -13,3 +13,5 @@ coverage/
 .vite/
 apps/web/dist/
 apps/server/dist/
+test-results/
+playwright-report/

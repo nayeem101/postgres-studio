@@ -1,5 +1,19 @@
-/**
- * Vite + React SPA (Phase 1). Grid, row detail, FK drawer, history.
- * Fetch via Eden Treaty + TanStack Query; types from `@pg-studio/api`.
- */
-console.log("@pg-studio/web placeholder. Phase 1: Vite + TanStack Table.");
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { App } from "./App";
+import "./index.css";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 1, staleTime: 5_000 },
+  },
+});
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  </StrictMode>,
+);

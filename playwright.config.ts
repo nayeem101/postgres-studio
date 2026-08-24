@@ -20,7 +20,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bun run dev:server",
+    // Build the SPA then serve it (plus the API) from the Elysia server.
+    command: "bun run build:web && bun apps/server/src/index.ts",
     url: process.env.BASE_URL ?? "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

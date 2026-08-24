@@ -1,4 +1,6 @@
 import { SQL } from "bun";
+import { mkdirSync } from "node:fs";
+import { extname, join, resolve, sep } from "node:path";
 import { Elysia, status, t } from "elysia";
 import {
   listColumns,
@@ -108,6 +110,8 @@ const RowsQuerySchema = t.Object({
 
 export interface ServerAppConfig {
   databaseUrl: string;
+  /** Built SPA directory; when present the server also serves the frontend. */
+  staticDir?: string;
 }
 
 /** URL-safe redaction for any log line that might carry the connection string. */
@@ -115,10 +119,51 @@ export function redactUrl(url: string): string {
   return url.replace(/:[^:@/]+@/, ":***@");
 }
 
+const MIME_BY_EXT: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".json": "application/json",
+};
+
+/** Serve a built SPA with an index.html fallback; blocks path traversal. */
+function attachStatic(
+  app: {
+    get(path: string, handler: (context: { request: Request }) => unknown): unknown;
+  },
+  dir: string,
+): void {
+  const root = resolve(dir);
+  app.get("/*", async ({ request }) => {
+    const { pathname } = new URL(request.url);
+    if (pathname.startsWith("/api/") || pathname === "/health") {
+      return status(404, { error: "not found" });
+    }
+    const relative = pathname === "/" ? "index.html" : decodeURIComponent(pathname.slice(1));
+    const candidate = resolve(root, relative);
+    if (candidate !== root && !candidate.startsWith(root + sep)) {
+      return status(404, { error: "not found" });
+    }
+    const file = Bun.file(candidate);
+    if (!(await file.exists())) {
+      // SPA fallback: client-side routes get the shell.
+      return new Response(Bun.file(join(root, "index.html")), {
+        headers: { "content-type": MIME_BY_EXT[".html"]! },
+      });
+    }
+    return new Response(file, {
+      headers: { "content-type": MIME_BY_EXT[extname(candidate)] ?? "application/octet-stream" },
+    });
+  });
+}
+
 export function createServerApp(config: ServerAppConfig) {
   const db = new SQL(config.databaseUrl);
 
-  return (
+  const app = (
     new Elysia({ name: "pg-studio-server" })
       .get("/health", () => ({ ok: true }))
       .get(
@@ -214,4 +259,10 @@ export function createServerApp(config: ServerAppConfig) {
         await db.close();
       })
   );
+
+  if (config.staticDir) {
+    mkdirSync(config.staticDir, { recursive: true });
+    attachStatic(app, config.staticDir);
+  }
+  return app;
 }

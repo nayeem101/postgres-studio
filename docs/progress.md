@@ -2,13 +2,13 @@
 
 Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-and-plan.md) §§6–7a. Update this file when a task is actually verified ([agent-workflow.md](agent-workflow.md)).
 
-**Status:** Bootstrap complete. Phase 0 complete (all tasks verified). Phase 1 not started.
+**Status:** Phase 0 complete. Phase 1 in progress (scaffold, sidebar, grid, introspection, API done; row detail + write-path UI remain).
 
 | Phase | Status |
 |---|---|
 | Bootstrap (skills, rules, workflow, monorepo) | done |
 | Phase 0 — Spike | done |
-| Phase 1 — Core browsing | not started |
+| Phase 1 — Core browsing | in progress |
 | Phase 2 — Bidirectional FK panel | not started |
 | Phase 3 — Write-path safety | not started |
 | Phase 4 — Distribution | not started |
@@ -79,6 +79,11 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
 - [ ] Elysia app + Vite SPA scaffold; localhost launch; Bun can serve built SPA  
   **Acceptance:** `bun run dev` opens UI against local API
 
+- [x] Elysia app + Vite SPA scaffold; localhost launch; Bun can serve built SPA  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run build:web` → dist built (266 KB js / 8.4 KB css); server boots with `(serving built SPA)` and `curl :3997/` returns the app shell while `/api/tables` returns JSON; traversal probe `GET /../../.env` serves the index shell, never file contents (0 matches for secrets)  
+  **Notes:** Vite + React 19 + Tailwind v4 (`@tailwindcss/vite`, four-step token CSS) + TanStack Query/Virtual. Dev proxy `/api` → :3000. `createServerApp` gained optional `staticDir` with traversal-guarded static handler + SPA fallback.
+
 - [x] TypeBox schemas for table list, column metadata, row payloads (drive Eden Treaty)  
   **Done:** 2026-08-24  
   **Evidence:** `bun run test` → 116 pass / 0 fail. `tests/integration/api.test.ts` drives `treaty(createServerApp(...))` against the seeded DB (tables/enums/detail/404/422). Type-level assertions in `tests/types/eden.test-d.ts` pass under the root tsc gate, incl. `@ts-expect-error` negatives; literal unions (`kind`, FK actions) flow through treaty  
@@ -89,12 +94,21 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
   **Evidence:** `bun run test` → 110 pass / 0 fail. `tests/integration/schema-meta.test.ts` asserts composite PK order (`orders[shop_id,order_no]`), unique constraints in both schemas, secondary/partial index flags, enum values in declaration order, `USER-DEFINED`/`task_status` udt on the status column; view vs table kind asserted in `introspect.test.ts`  
   **Notes:** new `packages/db/src/schema-meta.ts` (listPrimaryKeys/listUniqueConstraints/listIndexes/listEnums). Seed fixture extended with `app` schema, `task_status` enum, view, partial index, and cross-schema FK `public.links → app.projects`. Bug caught by tests: module initially used global `sql` instead of the injected connection — all catalog access now flows through the passed `db`.
 
-- [ ] Sidebar table/view list  
-  **Acceptance:** click selects table and loads grid
+- [x] Sidebar table/view list  
+  **Done:** 2026-08-24  
+  **Evidence:** component tests (`bun run test:web` → 9 pass / 0 fail): schema-grouped list, selection callback, `view` badge distinct, error alert state; E2E smoke clicks `orders` in a real browser  
+  **Notes:** fetches `/api/tables` via TanStack Query; client injected as prop for tests.
 
-- [ ] Virtualized grid, column sort/filter/search, keyset pagination  
+- [x] Virtualized grid, column sort/filter/search, keyset pagination  
   **Acceptance:** large table does not mount all rows; next page uses keyset not `OFFSET`  
-  **Backend done:** 2026-08-24 — `packages/db/src/rows.ts` keyset engine (row-value comparison on PK tuple, `limit+1` probe, opaque cursor; unit tests for compiled SQL incl. injection/clamp/arity cases) + `GET …/rows` endpoint (PK-default or catalog-validated sort, tampered cursor → 400). Evidence: `bun run test` → 130 pass / 0 fail. Remaining: virtualized grid UI, client-side filter/search box wiring.
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run test:web` asserts a 1000-row fixture mounts ≤41 DOM rows and page one only loads via cursor; sort toggling issues `sort/dir` server queries (asc then desc); search filters with live count. Integration rows tests prove keyset pages (7 pass). Full gate: unit+integration 139 pass, web 9 pass, typecheck clean, e2e 1 pass  
+  **Notes:** TanStack Virtual with bounded-window fallback when no layout engine (tests). Server-side sort on any catalog column; global search over loaded pages; per-column filter UI deferred.
+
+- [x] Thin browser E2E smoke test  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run test:e2e` → 1 passed (chromium): title check, sidebar visible, select `orders`, headers + seeded cell `150.00` render  
+  **Notes:** playwright webServer now builds the SPA then serves it from Elysia on :3000 against `$TEST_DATABASE_URL`.
 
 - [ ] Row detail panel  
   **Acceptance:** selected row shows all columns
@@ -106,6 +120,8 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
   **Acceptance:** required/nullable/enum fields match catalog
 
 - [ ] Component tests for SPA states and pending changes  
+  **Acceptance:** `bun test apps/web --preload ./tests/setup/happydom.ts` covers accessible grid, loading/error, and pending-save behavior  
+  **Partial:** 2026-08-24 — SPA states covered: 9 passing tests (`bun run test:web`) for sidebar grouping/selection/error, grid bounded mounting, search count, sort direction toggling, NULL cells, empty-shell state. Pending-save behavior awaits the write-path UI.
   **Acceptance:** `bun test apps/web --preload ./tests/setup/happydom.ts` covers accessible grid, loading/error, and pending-save behavior
 
 - [ ] Thin browser E2E smoke test  
