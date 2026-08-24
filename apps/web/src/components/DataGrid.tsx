@@ -1,7 +1,9 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Row, StudioClient } from "../api";
+import type { CellValue, Row } from "../api";
+import type { StudioClient } from "../api";
+import { AddRowForm } from "./AddRowForm";
 
 const ROW_HEIGHT = 32;
 /** When no real layout exists (tests / hidden mount), render a bounded window. */
@@ -22,20 +24,52 @@ export interface DataGridProps {
   onRowSelect?: (row: Row) => void;
 }
 
-function cellText(value: string | number | boolean | null): string {
+interface StagedUpdate {
+  pkValues: CellValue[];
+  set: Record<string, CellValue>;
+}
+
+function cellText(value: CellValue): string {
   if (value === null) return "NULL";
   return String(value);
 }
 
 /**
  * Virtualized grid fed by keyset pages. Only the visible DOM window mounts
- * rows regardless of how many pages were fetched.
+ * rows regardless of how many pages were fetched. Edits/deletes are STAGED
+ * locally and only sent by the explicit Save action (pending-changes model).
  */
 export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: DataGridProps) {
+  const queryClient = useQueryClient();
   const [sort, setSort] = useState<SortState | null>(null);
   const [search, setSearch] = useState("");
   const [hasLayout, setHasLayout] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [stagedUpdates, setStagedUpdates] = useState<Map<string, StagedUpdate>>(new Map());
+  const [stagedDeletes, setStagedDeletes] = useState<Map<string, CellValue[]>>(new Map());
+  const [stagedInserts, setStagedInserts] = useState<Array<Record<string, CellValue>>>([]);
+  const [editing, setEditing] = useState<{ key: string; column: string; draft: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  const detailQuery = useQuery({
+    queryKey: ["detail", schema, table],
+    queryFn: () => client.getTableDetail(schema, table),
+  });
+  const enumsQuery = useQuery({
+    queryKey: ["enums"],
+    queryFn: () => client.listEnums(),
+    staleTime: Infinity,
+  });
+
+  const primaryKey = detailQuery.data?.primaryKey ?? [];
+  const editable = primaryKey.length > 0;
+  const nullableColumns = useMemo(
+    () => new Set((detailQuery.data?.columns ?? []).filter(c => c.nullable).map(c => c.name)),
+    [detailQuery.data],
+  );
 
   const query = useInfiniteQuery({
     queryKey: ["rows", schema, table, sort?.column ?? null, sort?.dir ?? "asc", pageSize],
@@ -108,6 +142,65 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: 
     );
   }
 
+  const pkOf = (row: Row): CellValue[] => primaryKey.map(column => row[column]);
+  const keyOf = (row: Row): string => JSON.stringify(pkOf(row));
+
+  function stageEdit(rowKey: string, row: Row, column: string, rawText: string) {
+    const original = row[column];
+    let value: CellValue;
+    if (rawText === "" && nullableColumns.has(column)) value = null;
+    else if (typeof original === "number" && rawText !== "" && !Number.isNaN(Number(rawText)))
+      value = Number(rawText);
+    else value = rawText;
+
+    setStagedUpdates(current => {
+      const next = new Map(current);
+      const existing = next.get(rowKey);
+      next.set(rowKey, {
+        pkValues: existing?.pkValues ?? pkOf(row),
+        set: { ...(existing?.set ?? {}), [column]: value },
+      });
+      return next;
+    });
+  }
+
+  function toggleDelete(row: Row) {
+    const key = keyOf(row);
+    setStagedDeletes(current => {
+      const next = new Map(current);
+      if (next.has(key)) next.delete(key);
+      else next.set(key, pkOf(row));
+      return next;
+    });
+  }
+
+  async function onSave() {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await client.saveRows(schema, table, {
+        updates: [...stagedUpdates.values()],
+        deletes: [...stagedDeletes.values()].map(pkValues => ({ pkValues })),
+        inserts: stagedInserts.map(values => ({ values })),
+      });
+      setStagedUpdates(new Map());
+      setStagedDeletes(new Map());
+      setStagedInserts([]);
+      await query.refetch();
+    } catch (error) {
+      setSaveError(`Save failed — pending changes kept. ${(error as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function discardAll() {
+    setStagedUpdates(new Map());
+    setStagedDeletes(new Map());
+    setStagedInserts([]);
+    setSaveError(null);
+  }
+
   if (query.isPending) {
     return <div role="status">Loading rows…</div>;
   }
@@ -132,6 +225,8 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: 
     ? rowVirtualizer.getTotalSize()
     : Math.min(visibleRows.length, NO_LAYOUT_WINDOW) * ROW_HEIGHT;
 
+  const pendingCount = stagedUpdates.size + stagedDeletes.size + stagedInserts.length;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-3 border-b border-border px-3 py-2">
@@ -152,7 +247,51 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: 
             : `${visibleRows.length} of ${flatRows.length} rows`}
           {query.isFetching ? " · updating…" : ""}
         </span>
+        {editable ? (
+          <button
+            type="button"
+            aria-label="Add row"
+            onClick={() => setShowAddForm(current => !current)}
+            className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
+          >
+            + Row
+          </button>
+        ) : null}
       </div>
+
+      {pendingCount > 0 || saveError ? (
+        <div role="status" className="flex items-center gap-3 border-b border-border bg-muted px-3 py-1 text-sm">
+          <span>
+            Pending: {stagedUpdates.size} edit(s), {stagedDeletes.size} delete(s),{" "}
+            {stagedInserts.length} insert(s)
+          </span>
+          <button
+            type="button"
+            onClick={() => void onSave()}
+            disabled={saving}
+            className="rounded bg-primary px-3 py-0.5 text-primary-foreground disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button type="button" onClick={discardAll} className="rounded border border-border px-3 py-0.5">
+            Discard
+          </button>
+          {saveError ? (
+            <span role="alert" className="text-danger">
+              {saveError}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {showAddForm && detailQuery.data ? (
+        <AddRowForm
+          detail={detailQuery.data}
+          enums={enumsQuery.data ?? []}
+          onStage={values => setStagedInserts(current => [...current, values])}
+          onClose={() => setShowAddForm(false)}
+        />
+      ) : null}
 
       <div role="grid" aria-rowcount={visibleRows.length} className="min-h-0 flex-1">
         <div
@@ -174,6 +313,7 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: 
               {sort?.column === column ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
             </button>
           ))}
+          {editable ? <span className="w-8 shrink-0" aria-hidden /> : null}
         </div>
 
         <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-auto">
@@ -181,6 +321,9 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: 
             {boundedWindow.map(virtualRow => {
               const row: Row | undefined = visibleRows[virtualRow.index];
               if (!row) return null;
+              const key = editable ? keyOf(row) : `${virtualRow.index}`;
+              const isDeleted = stagedDeletes.has(key);
+              const edited = stagedUpdates.get(key);
               return (
                 <div
                   key={`${schema}.${table}-${virtualRow.key}`}
@@ -196,24 +339,69 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: 
                   }
                   className={`absolute left-0 flex w-full border-b border-border px-2 text-sm hover:bg-muted ${
                     onRowSelect ? "cursor-pointer" : ""
-                  }`}
+                  } ${isDeleted ? "text-muted-foreground line-through opacity-60" : ""}`}
                   style={{
                     height: virtualRow.size,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  {columns.map(column => (
-                    <div
-                      key={column}
-                      role="gridcell"
-                      title={cellText(row[column])}
-                      className={`flex-1 truncate px-2 leading-[30px] ${
-                        row[column] === null ? "italic text-muted-foreground" : ""
-                      }`}
+                  {columns.map(column => {
+                    const isEditing =
+                      editing?.key === key && editing.column === column && !isDeleted;
+                    const staged = edited && column in edited.set ? edited.set[column] : undefined;
+                    const display = staged !== undefined ? staged : row[column];
+                    return (
+                      <div
+                        key={column}
+                        role="gridcell"
+                        title={cellText(display)}
+                        onDoubleClick={
+                          editable && !isDeleted
+                            ? () => setEditing({ key, column, draft: cellText(display) })
+                            : undefined
+                        }
+                        className={`flex-1 truncate px-2 leading-[30px] ${
+                          display === null ? "italic text-muted-foreground" : ""
+                        } ${staged !== undefined ? "font-semibold text-primary" : ""}`}
+                      >
+                        {isEditing ? (
+                          <input
+                            autoFocus
+                            aria-label={`edit ${column}`}
+                            value={editing.draft}
+                            onChange={event =>
+                              setEditing({ ...editing, draft: event.target.value })
+                            }
+                            onKeyDown={event => {
+                              if (event.key === "Enter") {
+                                stageEdit(key, row, column, editing.draft);
+                                setEditing(null);
+                              } else if (event.key === "Escape") {
+                                setEditing(null);
+                              }
+                            }}
+                            onBlur={() => setEditing(null)}
+                            className="w-full rounded border border-primary bg-background px-1"
+                          />
+                        ) : (
+                          cellText(display)
+                        )}
+                      </div>
+                    );
+                  })}
+                  {editable ? (
+                    <button
+                      type="button"
+                      aria-label={`Delete ${primaryKey.map(c => row[c]).join(",")}`}
+                      onClick={event => {
+                        event.stopPropagation();
+                        toggleDelete(row);
+                      }}
+                      className="w-6 shrink-0 text-center text-muted-foreground hover:text-danger"
                     >
-                      {cellText(row[column])}
-                    </div>
-                  ))}
+                      ✕
+                    </button>
+                  ) : null}
                 </div>
               );
             })}

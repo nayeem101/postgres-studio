@@ -29,10 +29,36 @@ export interface RowsQuery {
   dir?: "asc" | "desc";
 }
 
+export interface TableDetail {
+  primaryKey: string[];
+  columns: Array<{
+    name: string;
+    nullable: boolean;
+    hasDefault: boolean;
+    udtName: string;
+    dataType: string;
+  }>;
+}
+
+export type CellValue = string | number | boolean | null;
+
+export interface SavePayload {
+  updates: Array<{ pkValues: CellValue[]; set: Record<string, CellValue> }>;
+  deletes: Array<{ pkValues: CellValue[] }>;
+  inserts: Array<{ values: Record<string, CellValue> }>;
+}
+
+export interface SaveResult {
+  batchId: string;
+}
+
 /** Narrow surface the UI consumes — swap to a fake in component tests. */
 export interface StudioClient {
   listTables(): Promise<TableMeta[]>;
   listRows(schema: string, table: string, query: RowsQuery): Promise<RowsPage>;
+  getTableDetail(schema: string, table: string): Promise<TableDetail>;
+  listEnums(): Promise<Array<{ name: string; values: string[] }>>;
+  saveRows(schema: string, table: string, payload: SavePayload): Promise<SaveResult>;
 }
 
 export const studioClient: StudioClient = {
@@ -45,5 +71,29 @@ export const studioClient: StudioClient = {
     const res = await api.api.schemas({ schema }).tables({ table }).rows.get({ query });
     if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
     return { rows: res.data.rows as Row[], nextCursor: res.data.nextCursor };
+  },
+  async getTableDetail(schema, table) {
+    const res = await api.api.schemas({ schema }).tables({ table }).get();
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return {
+      primaryKey: res.data.primaryKey,
+      columns: res.data.columns.map(c => ({
+        name: c.name,
+        nullable: c.nullable,
+        hasDefault: c.hasDefault,
+        udtName: c.udtName,
+        dataType: c.dataType,
+      })),
+    };
+  },
+  async listEnums() {
+    const res = await api.api.enums.get();
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return res.data.enums.map(e => ({ name: e.name, values: e.values }));
+  },
+  async saveRows(schema, table, payload) {
+    const res = await api.api.schemas({ schema }).tables({ table }).save.post(payload);
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return { batchId: res.data.batchId };
   },
 };

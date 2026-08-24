@@ -2,13 +2,13 @@
 
 Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-and-plan.md) §§6–7a. Update this file when a task is actually verified ([agent-workflow.md](agent-workflow.md)).
 
-**Status:** Phase 0 complete. Phase 1 in progress (scaffold, sidebar, grid, introspection, API done; row detail + write-path UI remain).
+**Status:** Phase 0 complete. Phase 1 complete. Phase 2 (bidirectional FK drawer) not started.
 
 | Phase | Status |
 |---|---|
 | Bootstrap (skills, rules, workflow, monorepo) | done |
 | Phase 0 — Spike | done |
-| Phase 1 — Core browsing | in progress |
+| Phase 1 — Core browsing | done |
 | Phase 2 — Bidirectional FK panel | not started |
 | Phase 3 — Write-path safety | not started |
 | Phase 4 — Distribution | not started |
@@ -110,18 +110,28 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
   **Evidence:** `bun run test:e2e` → 1 passed (chromium): title check, sidebar visible, select `orders`, headers + seeded cell `150.00` render  
   **Notes:** playwright webServer now builds the SPA then serves it from Elysia on :3000 against `$TEST_DATABASE_URL`.
 
-- [ ] Row detail panel  
-  **Acceptance:** selected row shows all columns
+- [x] Row detail panel  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run test:web` → 18 pass / 0 fail; component tests cover click-to-open with every column listed, NULL labels, close button, and selection reset on table switch  
+  **Notes:** `DetailPanel` aside beside the grid; rows are keyboard-reachable (Enter opens).
 
-- [ ] Inline cell edit + delete with pending-changes/save (not auto-commit)  
-  **Acceptance:** edits stay pending until Save; Save is transactional
+- [x] Inline cell edit + delete with pending-changes/save (not auto-commit)  
+  **Acceptance:** edits stay pending until Save; Save is transactional  
+  **Done:** 2026-08-24  
+  **Evidence:** component tests stage edit via double-click→Enter (payload only sent on Save), Escape cancels, failed save keeps pending + alert, delete staging posts `deletes` — all in `bun run test:web`. Transactional save proven server-side in `bun test tests/integration/save-api.test.ts` (7 pass): single pg transaction per save, batch confirmed on success / failed on constraint violation, before-images recorded pre-mutation  
+  **Notes:** non-PK tables are read-only. Staged cells render bold-primary; deleted rows strikethrough. Save failure keeps local pending state (no silent loss).
 
-- [ ] Add-row form from column metadata (types, defaults, nullability, enums)  
-  **Acceptance:** required/nullable/enum fields match catalog
+- [x] Add-row form from column metadata (types, defaults, nullability, enums)  
+  **Acceptance:** required/nullable/enum fields match catalog  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run test:web` → 18 pass: form marks only `!nullable && !hasDefault` columns required, renders enum columns as selects over `pg_enum` labels, coerces numeric inputs, omits optional empties so DB defaults apply; staged inserts flow through the same transactional save endpoint (covered by `save-api.test.ts` insert test)  
+  **Notes:** `AddRowForm` driven entirely by `/api/schemas/:schema/tables/:table` + `/api/enums`.
 
-- [ ] Component tests for SPA states and pending changes  
+- [x] Component tests for SPA states and pending changes  
   **Acceptance:** `bun test apps/web --preload ./tests/setup/happydom.ts` covers accessible grid, loading/error, and pending-save behavior  
-  **Partial:** 2026-08-24 — SPA states covered: 9 passing tests (`bun run test:web`) for sidebar grouping/selection/error, grid bounded mounting, search count, sort direction toggling, NULL cells, empty-shell state. Pending-save behavior awaits the write-path UI.
+  **Done:** 2026-08-24  
+  **Evidence:** `bun run test:web` (= `bun test --preload ./tests/setup/happydom.ts apps/web`) → 18 pass / 0 fail: sidebar grouping/selection/error, grid bounded mounting + search + sort direction, detail panel, NULL labels, staging/save/failure/discard flows, add-form validation  
+  **Notes:** accessible roles asserted (`grid`, `alert`, `status`, `complementary`, `aria-sort`).
   **Acceptance:** `bun test apps/web --preload ./tests/setup/happydom.ts` covers accessible grid, loading/error, and pending-save behavior
 
 - [ ] Thin browser E2E smoke test  
