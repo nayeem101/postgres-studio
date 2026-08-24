@@ -44,3 +44,9 @@ export {
   type ListRowsOptions,
   type RowsPage,
 } from "./rows";
+export {
+  compileDelete,
+  compileInsert,
+  compileSelectByPkTuples,
+  compileUpdate,
+} from "./mutations";
