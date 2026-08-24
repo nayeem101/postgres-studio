@@ -56,8 +56,10 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
 
 ### Phase 0 test foundation
 
-- [ ] Unit test foundation for deterministic SQL and metadata logic  
-  **Acceptance:** `bun test tests/unit` covers identifier quoting, cursor logic, metadata normalization, and FK graph traversal without a database
+- [x] Unit test foundation for deterministic SQL and metadata logic  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun test tests/unit` → 65 pass / 0 fail; `bun run typecheck` → all 4 packages exit 0 (db/api upgraded from `bun build` to real `tsc --noEmit`)  
+  **Notes:** `packages/db` pure modules: `identify.ts` (strict allowlist + catalog-name quoting), `cursor.ts` (keyset codec), `normalize.ts` (catalog-row normalization, FK column-count invariant), `fk-graph.ts` (visited/depth-capped traversal, restore topological order with cycle fallback). No database access in these tests.
 
 - [x] Integration test fixture and real Postgres test harness  
   **Done:** 2026-08-24  

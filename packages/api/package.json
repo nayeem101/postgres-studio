@@ -6,6 +6,6 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "bun build --no-bundle ./src/index.ts"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }
