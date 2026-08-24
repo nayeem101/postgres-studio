@@ -138,7 +138,8 @@ Human gates: do not check these off without a person running the listed cases.
 
 - [ ] Before-image capture on INSERT/UPDATE/DELETE; `bun:sqlite` undo log; two-phase pending → mutate → confirmed/failed  
   **Acceptance:** failed Postgres write never appears as restorable in History  
-  **Verify:** `bun test` mutation/snapshot tests + manual failed-write
+  **Verify:** `bun test` mutation/snapshot tests + manual failed-write  
+  **Foundation done:** 2026-08-24 — `apps/server/src/backup/index.ts` BackupStore (batches+snapshots schema, pending→confirmed/failed state machine, atomic snapshot capture, restorable = confirmed only). Evidence: `bun run test` → 139 pass / 0 fail incl. 9 store lifecycle tests. Still open: Postgres mutation wiring, cascade-aware capture, manual failed-write verification.
 
 - [ ] Cascade-aware snapshotting (reuse incoming-FK / `confdeltype = 'c'`)  
   **Acceptance:** deleting a parent snapshots cascaded children  
