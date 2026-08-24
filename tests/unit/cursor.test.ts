@@ -41,7 +41,7 @@ describe("cursor codec", () => {
     [[undefined as unknown as null]],
     [["ok", { deep: true }]],
   ])("rejects non-primitive entry %p", values => {
-    expect(() => encodeCursor(values)).toThrow(CursorError);
+    expect(() => encodeCursor(values as never)).toThrow(CursorError);
   });
 
   test("rejects empty or non-string tokens", () => {

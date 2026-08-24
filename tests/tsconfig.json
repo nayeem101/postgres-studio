@@ -1,0 +1,16 @@
+{
+  "extends": "../packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@pg-studio/api": ["../packages/api/src/index.ts"],
+      "@pg-studio/db": ["../packages/db/src/index.ts"]
+    }
+  },
+  "include": [
+    "unit/**/*.ts",
+    "integration/**/*.ts",
+    "types/**/*.ts",
+    "fixtures/**/*.ts",
+    "e2e/**/*.ts"
+  ]
+}

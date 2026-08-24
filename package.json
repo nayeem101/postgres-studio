@@ -14,7 +14,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "playwright:install": "playwright install chromium",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "bun run --filter '*' typecheck && tsc --noEmit -p tests/tsconfig.json",
     "seed:test-db": "bun apps/server/src/seed.ts"
   },
   "type": "module",

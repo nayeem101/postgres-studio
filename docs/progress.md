@@ -2,12 +2,12 @@
 
 Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-and-plan.md) §§6–7a. Update this file when a task is actually verified ([agent-workflow.md](agent-workflow.md)).
 
-**Status:** Bootstrap complete. Phase 0 in progress (test foundation done).
+**Status:** Bootstrap complete. Phase 0 complete (all tasks verified). Phase 1 not started.
 
 | Phase | Status |
 |---|---|
 | Bootstrap (skills, rules, workflow, monorepo) | done |
-| Phase 0 — Spike | not started |
+| Phase 0 — Spike | done |
 | Phase 1 — Core browsing | not started |
 | Phase 2 — Bidirectional FK panel | not started |
 | Phase 3 — Write-path safety | not started |
@@ -55,8 +55,10 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
   **Evidence:** `bun test tests/integration/elysia-spike.test.ts` → 7 pass / 0 fail (`app.handle` request-level, no network); live boot check `PORT=3999 bun apps/server/src/index.ts` → `/health` = `{"ok":true}`, `/spike/hello/grace` = `{"message":"hello, grace"}`; full gate `bun run test` → 97 pass / 0 fail, `bun run typecheck` exit 0  
   **Notes:** `apps/server/src/spike-app.ts` is the Phase 0 surface (prefix `/spike`, DB-free). Invalid body/type/range → 422 with TypeBox validation payload. `dev` script runs `bun --hot src/index.ts`. elysia pinned in `apps/server`, eden in `packages/api`.
 
-- [ ] Eden Treaty throwaway client fetch against that endpoint  
-  **Acceptance:** typed client compiles and round-trips
+- [x] Eden Treaty throwaway client fetch against that endpoint  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun test tests/integration/eden-treaty.test.ts` → 4 pass / 0 fail (in-memory treaty round-trips hello + echo, 422 surfaced as error); type gate `tsc --noEmit -p tests/tsconfig.json` passes incl. negative cases (`@ts-expect-error` on missing param / wrong limit type); full gate `bun run test` → 101 pass / 0 fail  
+  **Notes:** `packages/api` re-exports `App` from the server entry (type-only, no port binding). Dependency direction fixed: api dev-depends on server; server no longer depends on api. Gotcha: path params go in the segment call (`api.spike.hello({name}).get()`), not the verb call — both runtime test and types now encode this. Tests are now typechecked via new root `tests/tsconfig.json` wired into `bun run typecheck`.
 
 ### Phase 0 test foundation
 

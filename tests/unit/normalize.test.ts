@@ -133,7 +133,7 @@ describe("normalizeFk", () => {
     ["r", "RESTRICT"],
     ["n", "SET NULL"],
     ["d", "SET DEFAULT"],
-  ])("action code %s → %s", (code, label) => {
+  ] as const)("action code %s → %s", (code, label) => {
     expect(normalizeFk({ ...fkRow, onDelete: code }).onDelete).toBe(label);
   });
 

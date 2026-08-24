@@ -20,7 +20,7 @@ describe("integration harness", () => {
       where table_schema = 'public'
       order by table_name
     `;
-    expect(rows.map(r => r.table_name)).toEqual([
+    expect(rows.map((r: { table_name: string }) => r.table_name)).toEqual([
       "addresses",
       "customers",
       "employees",
@@ -65,7 +65,7 @@ describe("integration harness", () => {
       where o.shop_id = 2 and o.order_no = 100
       order by oi.id
     `;
-    expect(items.map(i => i.product)).toEqual(["monitor", "cable"]);
+    expect(items.map((i: { product: string }) => i.product)).toEqual(["monitor", "cable"]);
   });
 
   test("composite FK rejects orphan insert", async () => {

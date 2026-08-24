@@ -10,6 +10,7 @@
   },
   "devDependencies": {
     "@elysiajs/eden": "1.4.9",
+    "@pg-studio/server": "workspace:*",
     "elysia": "1.4.29"
   }
 }
