@@ -93,7 +93,8 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
   **Acceptance:** click selects table and loads grid
 
 - [ ] Virtualized grid, column sort/filter/search, keyset pagination  
-  **Acceptance:** large table does not mount all rows; next page uses keyset not `OFFSET`
+  **Acceptance:** large table does not mount all rows; next page uses keyset not `OFFSET`  
+  **Backend done:** 2026-08-24 — `packages/db/src/rows.ts` keyset engine (row-value comparison on PK tuple, `limit+1` probe, opaque cursor; unit tests for compiled SQL incl. injection/clamp/arity cases) + `GET …/rows` endpoint (PK-default or catalog-validated sort, tampered cursor → 400). Evidence: `bun run test` → 130 pass / 0 fail. Remaining: virtualized grid UI, client-side filter/search box wiring.
 
 - [ ] Row detail panel  
   **Acceptance:** selected row shows all columns

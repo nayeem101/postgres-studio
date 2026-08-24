@@ -6,6 +6,7 @@ import {
   listIncomingFks,
   listOutgoingFks,
   listPrimaryKeys,
+  listRows,
   listTables,
   listUniqueConstraints,
 } from "@pg-studio/db";
@@ -88,6 +89,23 @@ export const TableDetailSchema = t.Object({
 
 export const ApiErrorSchema = t.Object({ error: t.String() });
 
+export const RowsPageSchema = t.Object({
+  rows: t.Array(
+    t.Record(
+      t.String(),
+      t.Union([t.String(), t.Number(), t.Boolean(), t.Null()]),
+    ),
+  ),
+  nextCursor: t.Nullable(t.String()),
+});
+
+const RowsQuerySchema = t.Object({
+  limit: t.Optional(t.String({ pattern: "^\\d{1,4}$" })),
+  cursor: t.Optional(t.String()),
+  sort: t.Optional(t.String()),
+  dir: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
+});
+
 export interface ServerAppConfig {
   databaseUrl: string;
 }
@@ -142,6 +160,53 @@ export function createServerApp(config: ServerAppConfig) {
           response: {
             200: TableDetailSchema,
             404: ApiErrorSchema,
+          },
+        },
+      )
+      .get(
+        "/api/schemas/:schema/tables/:table/rows",
+        async ({ params, query }) => {
+          let orderBy: string[];
+          if (query.sort) {
+            orderBy = query.sort.split(",").map(s => s.trim()).filter(Boolean);
+          } else {
+            const pks = await listPrimaryKeys(db);
+            orderBy =
+              pks.find(p => p.schema === params.schema && p.table === params.table)?.columns ?? [];
+          }
+          if (orderBy.length === 0) {
+            return status(400, { error: "no sortable key available for this relation" });
+          }
+
+          const catalogColumns = await listColumns(db, params.schema, params.table);
+          const known = new Set(catalogColumns.map(c => c.name));
+          const unknownSort = orderBy.find(c => !known.has(c));
+          if (unknownSort) {
+            return status(400, { error: `unknown sort column "${unknownSort}"` });
+          }
+
+          try {
+            return await listRows(db, {
+              schema: params.schema,
+              table: params.table,
+              orderBy,
+              descending: query.dir === "desc",
+              cursor: query.cursor,
+              limit: Number(query.limit ?? 50),
+            });
+          } catch (error) {
+            if ((error as Error).name === "CursorError") {
+              return status(400, { error: "invalid cursor token" });
+            }
+            throw error;
+          }
+        },
+        {
+          params: t.Object({ schema: IdentParam, table: IdentParam }),
+          query: RowsQuerySchema,
+          response: {
+            200: RowsPageSchema,
+            400: ApiErrorSchema,
           },
         },
       )

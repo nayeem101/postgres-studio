@@ -14,8 +14,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  app?.stop(true);
-  await db?.close();
+  // never-listened instances have no server handle; onStop won't fire
+  if ((app as unknown as { server?: unknown }).server) app.stop(true);
+  await db.close();
 });
 
 describe("GET /api/tables", () => {

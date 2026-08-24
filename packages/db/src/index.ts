@@ -36,3 +36,11 @@ export {
   type PrimaryKeyMeta,
   type UniqueConstraintMeta,
 } from "./schema-meta";
+export {
+  compileRowsQuery,
+  jsonSafe,
+  listRows,
+  type CompiledQuery,
+  type ListRowsOptions,
+  type RowsPage,
+} from "./rows";
