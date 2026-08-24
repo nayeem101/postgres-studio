@@ -22,6 +22,8 @@ export interface DataGridProps {
   pageSize?: number;
   /** Fires when the user clicks a row (row detail panel). */
   onRowSelect?: (row: Row) => void;
+  /** Fires when the user opens the FK drawer for a row. */
+  onOpenReferences?: (row: Row, pkValues: CellValue[]) => void;
 }
 
 interface StagedUpdate {
@@ -39,7 +41,7 @@ function cellText(value: CellValue): string {
  * rows regardless of how many pages were fetched. Edits/deletes are STAGED
  * locally and only sent by the explicit Save action (pending-changes model).
  */
-export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: DataGridProps) {
+export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect, onOpenReferences }: DataGridProps) {
   const queryClient = useQueryClient();
   const [sort, setSort] = useState<SortState | null>(null);
   const [search, setSearch] = useState("");
@@ -313,7 +315,7 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: 
               {sort?.column === column ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
             </button>
           ))}
-          {editable ? <span className="w-8 shrink-0" aria-hidden /> : null}
+          {editable ? <span className="w-14 shrink-0" aria-hidden /> : null}
         </div>
 
         <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-auto">
@@ -390,17 +392,33 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: 
                     );
                   })}
                   {editable ? (
-                    <button
-                      type="button"
-                      aria-label={`Delete ${primaryKey.map(c => row[c]).join(",")}`}
-                      onClick={event => {
-                        event.stopPropagation();
-                        toggleDelete(row);
-                      }}
-                      className="w-6 shrink-0 text-center text-muted-foreground hover:text-danger"
-                    >
-                      ✕
-                    </button>
+                    <span className="flex w-14 shrink-0 items-center justify-end gap-1">
+                      {onOpenReferences ? (
+                        <button
+                          type="button"
+                          aria-label={`References ${key}`}
+                          title="Open FK references"
+                          onClick={event => {
+                            event.stopPropagation();
+                            onOpenReferences(row, pkOf(row));
+                          }}
+                          className="text-center text-muted-foreground hover:text-primary"
+                        >
+                          ⛓
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        aria-label={`Delete ${primaryKey.map(c => row[c]).join(",")}`}
+                        onClick={event => {
+                          event.stopPropagation();
+                          toggleDelete(row);
+                        }}
+                        className="text-center text-muted-foreground hover:text-danger"
+                      >
+                        ✕
+                      </button>
+                    </span>
                   ) : null}
                 </div>
               );

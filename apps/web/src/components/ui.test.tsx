@@ -6,6 +6,7 @@ import { Sidebar } from "./Sidebar";
 import { DataGrid } from "./DataGrid";
 import { DetailPanel } from "./DetailPanel";
 import { AddRowForm } from "./AddRowForm";
+import { FKDrawer, type DrawerTarget } from "./FKDrawer";
 import { App } from "../App";
 import type { Row, RowsQuery, StudioClient, TableMeta } from "../api";
 
@@ -61,6 +62,8 @@ function makeRowClient(totalRows: number, pageSize = 50) {
       savedPayloads.push(payload);
       return { batchId: "batch-test" };
     },
+    outgoingReferences: async () => ({ outgoing: [] }),
+    incomingReferences: async () => ({ groups: [] }),
   };
   return { client, calls, savedPayloads, setSaveShouldFail: (v: boolean) => (saveShouldFail = v) };
 }
@@ -72,6 +75,8 @@ function stubClient(overrides: Partial<StudioClient> = {}): StudioClient {
     getTableDetail: async () => tableDetail,
     listEnums: async () => [],
     saveRows: async () => ({ batchId: "batch-x" }),
+    outgoingReferences: async () => ({ outgoing: [] }),
+    incomingReferences: async () => ({ groups: [] }),
     ...overrides,
   };
 }
@@ -342,6 +347,186 @@ describe("AddRowForm", () => {
 
     expect(staged).toHaveLength(1);
     expect(staged[0]).toEqual({ title: "ship it", status: "done" });
+  });
+});
+
+describe("FKDrawer", () => {
+  function referenceClient(log: { navigated: DrawerTarget[]; loadedMore: number[] }) {
+    const base = makeRowClient(3);
+    return {
+      client: {
+        ...base.client,
+        outgoingReferences: async () => ({
+          outgoing: [
+            {
+              constraintName: "employees_manager_fkey",
+              parentSchema: "public",
+              parentTable: "employees",
+              parentColumns: ["id"],
+              preview: { row: { id: 1, name: "Ada Lovelace" }, displayColumn: "name" },
+            },
+            {
+              constraintName: "null_ref",
+              parentSchema: "public",
+              parentTable: "ghosts",
+              parentColumns: ["id"],
+              preview: null,
+            },
+          ],
+        }),
+        incomingReferences: async (_s, _t, _pk, offset = 0) => {
+          if (offset > 0) log.loadedMore.push(offset);
+          return {
+            groups: [
+              {
+                constraintName: "employees_manager_fkey",
+                childSchema: "public",
+                childTable: "employees",
+                childColumns: ["manager_id"],
+                totalCount: 3,
+                rows: [{ id: 2, name: "Grace Hopper" }, { id: 3, name: "Alan Turing" }],
+                nextOffset: offset + 2 < 3 ? offset + 2 : null,
+              },
+            ],
+          };
+        },
+      } as StudioClient,
+      savedPayloads: base.savedPayloads,
+    };
+  }
+
+  const target: DrawerTarget = { schema: "public", table: "employees", pkValues: [2] };
+
+  test("shows outgoing previews and count badges; NULL refs labeled", async () => {
+    const { client } = referenceClient({ navigated: [], loadedMore: [] });
+    renderWithQuery(
+      <FKDrawer target={target} client={client} onNavigate={() => {}} onClose={() => {}} />,
+    );
+
+    expect(await screen.findByText("Ada Lovelace")).toBeDefined();
+    expect(screen.getByText("NULL reference")).toBeDefined();
+    expect(await screen.findByLabelText("3 referencing rows")).toBeDefined();
+  });
+
+  test("preview click-through navigates by the parent's referenced columns", async () => {
+    const navigated: DrawerTarget[] = [];
+    const { client } = referenceClient({ navigated, loadedMore: [] });
+    renderWithQuery(
+      <FKDrawer target={target} client={client} onNavigate={t => navigated.push(t)} onClose={() => {}} />,
+    );
+
+    fireEvent.click(await screen.findByText("Ada Lovelace"));
+    expect(navigated).toEqual([{ schema: "public", table: "employees", pkValues: [1] }]);
+  });
+
+  test("expanding a group lists children and paginates via Load more", async () => {
+    const log = { navigated: [] as DrawerTarget[], loadedMore: [] as number[] };
+    const { client } = referenceClient(log);
+    renderWithQuery(
+      <FKDrawer target={target} client={client} onNavigate={() => {}} onClose={() => {}} />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /referencing rows/ }));
+    expect(await screen.findByRole("button", { name: /Grace Hopper/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /1 left/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /Load more/ }));
+    await waitFor(() => expect(log.loadedMore).toEqual([2]));
+  });
+
+  test("child-row click-through uses the child table's primary key", async () => {
+    const navigated: DrawerTarget[] = [];
+    const { client } = referenceClient({ navigated, loadedMore: [] });
+    renderWithQuery(
+      <FKDrawer target={target} client={client} onNavigate={t => navigated.push(t)} onClose={() => {}} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /referencing rows/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Grace Hopper/ }));
+    expect(navigated[navigated.length - 1]).toEqual({
+      schema: "public",
+      table: "employees",
+      pkValues: [2],
+    });
+  });
+});
+
+describe("FK navigation guard (App)", () => {
+  function navClient(): StudioClient {
+    return stubClient({
+      listTables: async () => [{ schema: "public", name: "t", kind: "table" }],
+      listRows: async () => ({ rows: [{ id: 1, name: "row-1" }], nextCursor: null }),
+      outgoingReferences: async (_schema, _table, pkValues) => ({
+        outgoing: [
+          {
+            constraintName: "fk",
+            parentSchema: "public",
+            parentTable: "employees",
+            parentColumns: ["id"],
+            preview: {
+              row: { id: pkValues[0] === 1 ? 1 : 2, name: pkValues[0] === 1 ? "Ada" : "Grace" },
+              displayColumn: "name",
+            },
+          },
+        ],
+      }),
+      incomingReferences: async (_s, _t, pkValues) => ({
+        groups:
+          Number(pkValues[0]) === 1
+            ? [
+                {
+                  constraintName: "self_fk",
+                  childSchema: "public",
+                  childTable: "employees",
+                  childColumns: ["id"],
+                  totalCount: 1,
+                  rows: [{ id: 2, name: "Grace Hopper" }],
+                  nextOffset: null,
+                },
+              ]
+            : [],
+      }),
+    });
+  }
+
+  test("A→B→C then returning to B truncates forward history (loop-safe breadcrumbs)", async () => {
+    renderWithQuery(<App client={navClient()} />);
+
+    // select the table, then open the drawer at t(1)
+    fireEvent.click(await screen.findByRole("button", { name: /t/ }));
+    fireEvent.click(await screen.findByLabelText(/^References \[/));
+    expect(await screen.findByText("(1)")).toBeDefined();
+
+    // navigate to employees(1)
+    fireEvent.click(screen.getByText("Ada"));
+    expect(await screen.findByText("(1)")).toBeDefined();
+
+    // navigate to employees(2) via self-fk group
+    fireEvent.click(screen.getByRole("button", { name: /referencing rows/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Grace Hopper/ }));
+    expect(await screen.findByText("(2)")).toBeDefined();
+
+    // back → (1); Back hidden after popping to depth 1
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("(1)")).toBeDefined();
+
+    // click Ada again → employees(1): visited dedupe keeps stack [t(1), e(1)]
+    fireEvent.click(screen.getByText("Ada"));
+    expect(await screen.findByText("(1)")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Back" })).toBeDefined(); // t(1) behind
+
+    // Back returns all the way to the original grid-centered drawer
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByText("(1)")).toBeDefined(); // t(1) header
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull(); // root reached
+  });
+
+  test("closing the drawer clears history", async () => {
+    renderWithQuery(<App client={navClient()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /t/ }));
+    fireEvent.click(await screen.findByLabelText(/^References \[/));
+    fireEvent.click(await screen.findByText("Ada"));
+    fireEvent.click(screen.getByRole("button", { name: "Close drawer" }));
+    expect(screen.queryByRole("complementary", { name: "fk drawer" })).toBeNull();
   });
 });
 

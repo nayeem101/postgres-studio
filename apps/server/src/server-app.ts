@@ -521,6 +521,7 @@ export function createServerApp(config: ServerAppConfig) {
                   constraintName: t.String(),
                   parentSchema: t.String(),
                   parentTable: t.String(),
+                  parentColumns: t.Array(t.String()),
                   preview: t.Nullable(
                     t.Object({
                       row: t.Record(t.String(), CellSchema),

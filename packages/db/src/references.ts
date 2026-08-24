@@ -56,6 +56,8 @@ export interface OutgoingReference {
   constraintName: string;
   parentSchema: string;
   parentTable: string;
+  /** Referenced columns on the parent (usually its primary key). */
+  parentColumns: string[];
   /** Resolved parent preview; null when any FK column is NULL or dangling. */
   preview: {
     row: Record<string, CellValue>;
@@ -84,6 +86,7 @@ export async function resolveOutgoingReferences(db: SQL, options: ResolveOptions
         constraintName: fk.name,
         parentSchema: fk.parentSchema,
         parentTable: fk.parentTable,
+        parentColumns: fk.parentColumns,
         preview: null,
       });
       continue;
@@ -100,6 +103,7 @@ export async function resolveOutgoingReferences(db: SQL, options: ResolveOptions
         constraintName: fk.name,
         parentSchema: fk.parentSchema,
         parentTable: fk.parentTable,
+        parentColumns: fk.parentColumns,
         preview: null,
       });
       continue;
@@ -112,12 +116,15 @@ export async function resolveOutgoingReferences(db: SQL, options: ResolveOptions
     }));
     const displayColumn =
       options.displayColumns?.get(`${fk.parentSchema}.${fk.parentTable}`)?.[0] ??
-      pickDisplayColumn(parentColumnInfos, fk.parentColumns);
+      pickDisplayColumn(parentColumnInfos, fk.parentColumns) ??
+      Object.keys(parentRow)[0] ??
+      "id";
 
     results.push({
       constraintName: fk.name,
       parentSchema: fk.parentSchema,
       parentTable: fk.parentTable,
+      parentColumns: fk.parentColumns,
       preview: { row: parentRow, displayColumn },
     });
   }
