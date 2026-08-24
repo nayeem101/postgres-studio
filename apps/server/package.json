@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "seed:test-db": "bun src/seed.ts"
+    "seed:test-db": "bun src/seed.ts",
+    "spike": "bun src/cli.ts"
   },
   "dependencies": {
     "@pg-studio/db": "workspace:*",

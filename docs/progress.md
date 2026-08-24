@@ -40,9 +40,10 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
 
 ## Phase 0 — Spike
 
-- [ ] CLI accepts `--url`, connects with `Bun.sql`, dumps table list + columns from `information_schema`  
-  **Acceptance:** printed tables/columns for `$TEST_DATABASE_URL`  
-  **Verify:** `bun run --filter @pg-studio/server spike -- --url "$TEST_DATABASE_URL"` (or the CLI name chosen in the spike)
+- [x] CLI accepts `--url`, connects with `Bun.sql`, dumps table list + columns from `information_schema`  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun apps/server/src/cli.ts --url "$TEST_DATABASE_URL"` printed 5 relations with columns/flags; `--json` round-trips the same payload; `mysql://` URL rejected exit 2 with usage; unknown arg exit 2. Catalog functions covered by `bun run test` (83 pass / 0 fail)  
+  **Notes:** `packages/db/src/catalog.ts` holds introspection (bind parameters only, identifiers quoted). System/temp/toast schemas excluded. Identity columns render as `DEFAULT (identity)` (`is_identity` folded into `hasDefault`). URLs are password-redacted before printing. Root `test` script scoped to `tests/unit tests/integration` so Playwright specs aren't collected by bun.
 
 - [ ] FK query both directions on seeded DB (self-FK + composite FK)  
   **Acceptance:** outgoing + incoming rows match seed  

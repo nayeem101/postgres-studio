@@ -24,3 +24,4 @@ export {
   type WalkOptions,
   type WalkStep,
 } from "./fk-graph";
+export { listColumns, listTables } from "./catalog";

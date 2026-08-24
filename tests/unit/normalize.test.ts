@@ -70,6 +70,25 @@ describe("normalizeColumn", () => {
     expect(col.default).toContain("nextval");
   });
 
+  test("explicit hasDefault flag wins over default text (identity columns)", () => {
+    const col = normalizeColumn({ ...columnRow, hasDefault: true, default: null });
+    expect(col.hasDefault).toBe(true);
+    expect(col.default).toBeNull();
+  });
+
+  test.each([
+    ["YES", true],
+    ["NO", false],
+    [true, true],
+    [false, false],
+  ])("hasDefault accepts %p → %p", (flag, expected) => {
+    expect(normalizeColumn({ ...columnRow, hasDefault: flag }).hasDefault).toBe(expected);
+  });
+
+  test("hasDefault rejects garbage", () => {
+    expect(() => normalizeColumn({ ...columnRow, hasDefault: "MAYBE" })).toThrow(MetadataError);
+  });
+
   test("coerces string ordinal positions (pg drivers vary)", () => {
     const col = normalizeColumn({ ...columnRow, position: "3" });
     expect(col.position).toBe(3);

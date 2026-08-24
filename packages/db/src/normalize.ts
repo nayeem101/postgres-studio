@@ -96,6 +96,23 @@ export function normalizeColumn(row: Row): ColumnMeta {
   }
   const nullable = isNullableRaw === "YES" || isNullableRaw === true;
   const def = optStr(row, "default");
+  // Catalogs may compute the flag (e.g. identity columns have no textual
+  // default but are still client-insertable). Fall back to deriving it.
+  const hasDefaultRaw = row.hasDefault;
+  let hasDefault: boolean;
+  if (hasDefaultRaw === undefined || hasDefaultRaw === null) {
+    hasDefault = def !== null;
+  } else if (typeof hasDefaultRaw === "boolean") {
+    hasDefault = hasDefaultRaw;
+  } else if (hasDefaultRaw === "YES") {
+    hasDefault = true;
+  } else if (hasDefaultRaw === "NO") {
+    hasDefault = false;
+  } else {
+    throw new MetadataError(
+      `catalog row field "hasDefault" must be boolean or YES/NO, got ${JSON.stringify(hasDefaultRaw)}`,
+    );
+  }
   return {
     schema: str(row, "schema"),
     table: str(row, "table"),
@@ -104,7 +121,7 @@ export function normalizeColumn(row: Row): ColumnMeta {
     dataType: str(row, "dataType"),
     udtName: str(row, "udtName"),
     nullable,
-    hasDefault: def !== null,
+    hasDefault,
     default: def,
   };
 }
