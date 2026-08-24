@@ -153,6 +153,38 @@ describe("DataGrid", () => {
   });
 });
 
+describe("DetailPanel", () => {
+  test("lists every column of the selected row and closes", async () => {
+    const { App } = await import("../App");
+    const { client } = makeRowClient(3);
+    renderWithQuery(<App client={client} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /orders/ }));
+    fireEvent.click(await screen.findByText("row-2"));
+    const panel = await screen.findByRole("complementary", { name: "row detail" });
+    // every column of the fake rows appears as a term
+    for (const column of ["id", "name", "note"]) {
+      expect(panel.querySelector("dl")?.textContent).toContain(column);
+    }
+    expect(panel.textContent).toContain("note 1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close details" }));
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: "row detail" })).toBeNull());
+  });
+
+  test("NULL values are labelled in the panel", async () => {
+    const client: StudioClient = {
+      listTables: async () => [{ schema: "public", name: "solo", kind: "table" }],
+      listRows: async () => ({ rows: [{ id: 9, note: null }], nextCursor: null }),
+    };
+    renderWithQuery(<App client={client} />);
+    fireEvent.click(await screen.findByRole("button", { name: /solo/ }));
+    fireEvent.click(await screen.findByText(String(9)));
+    const panel = await screen.findByRole("complementary", { name: "row detail" });
+    expect(panel.textContent).toContain("NULL");
+  });
+});
+
 describe("App shell", () => {
   test("prompts to select a table before any selection is made", () => {
     renderWithQuery(<App client={makeRowClient(0).client} />);

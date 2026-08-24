@@ -18,6 +18,8 @@ export interface DataGridProps {
   table: string;
   client: StudioClient;
   pageSize?: number;
+  /** Fires when the user clicks a row (row detail panel). */
+  onRowSelect?: (row: Row) => void;
 }
 
 function cellText(value: string | number | boolean | null): string {
@@ -29,7 +31,7 @@ function cellText(value: string | number | boolean | null): string {
  * Virtualized grid fed by keyset pages. Only the visible DOM window mounts
  * rows regardless of how many pages were fetched.
  */
-export function DataGrid({ schema, table, client, pageSize = 50 }: DataGridProps) {
+export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect }: DataGridProps) {
   const [sort, setSort] = useState<SortState | null>(null);
   const [search, setSearch] = useState("");
   const [hasLayout, setHasLayout] = useState(false);
@@ -183,7 +185,18 @@ export function DataGrid({ schema, table, client, pageSize = 50 }: DataGridProps
                 <div
                   key={`${schema}.${table}-${virtualRow.key}`}
                   role="row"
-                  className="absolute left-0 flex w-full border-b border-border px-2 text-sm hover:bg-muted"
+                  tabIndex={onRowSelect ? 0 : undefined}
+                  onClick={onRowSelect ? () => onRowSelect(row) : undefined}
+                  onKeyDown={
+                    onRowSelect
+                      ? event => {
+                          if (event.key === "Enter") onRowSelect(row);
+                        }
+                      : undefined
+                  }
+                  className={`absolute left-0 flex w-full border-b border-border px-2 text-sm hover:bg-muted ${
+                    onRowSelect ? "cursor-pointer" : ""
+                  }`}
                   style={{
                     height: virtualRow.size,
                     transform: `translateY(${virtualRow.start}px)`,
