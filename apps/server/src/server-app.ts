@@ -1,8 +1,14 @@
 import { SQL } from "bun";
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { Elysia, status, t } from "elysia";
 import {
+  compileDelete,
+  compileInsert,
+  compileSelectByPkTuples,
+  compileUpdate,
   listColumns,
   listEnums,
   listIncomingFks,
@@ -12,6 +18,7 @@ import {
   listTables,
   listUniqueConstraints,
 } from "@pg-studio/db";
+import { BackupStore, type SnapshotInput } from "./backup";
 
 /**
  * The real studio API. Built per connection URL so tests can construct an
@@ -108,10 +115,41 @@ const RowsQuerySchema = t.Object({
   dir: t.Optional(t.Union([t.Literal("asc"), t.Literal("desc")])),
 });
 
+const CellSchema = t.Union([t.String(), t.Number(), t.Boolean(), t.Null()]);
+const PkValuesSchema = t.Array(CellSchema);
+
+export const SaveBodySchema = t.Object({
+  updates: t.Array(
+    t.Object({
+      pkValues: PkValuesSchema,
+      set: t.Record(t.String(), CellSchema),
+    }),
+  ),
+  deletes: t.Array(t.Object({ pkValues: PkValuesSchema })),
+  inserts: t.Array(t.Object({ values: t.Record(t.String(), CellSchema) })),
+});
+
+export const SaveResultSchema = t.Object({
+  batchId: t.String(),
+  appliedUpdates: t.Integer(),
+  appliedDeletes: t.Integer(),
+  appliedInserts: t.Integer(),
+  skipped: t.Integer(),
+});
+
+export type SaveBody = typeof SaveBodySchema.static;
+
 export interface ServerAppConfig {
   databaseUrl: string;
   /** Built SPA directory; when present the server also serves the frontend. */
   staticDir?: string;
+  /** Override for tests; defaults to a per-connection file under ~/.pg-studio. */
+  backupStore?: BackupStore;
+}
+
+/** Stable per-connection identifier derived from the URL (never contains secrets). */
+export function connectionIdFromUrl(url: string): string {
+  return createHash("sha256").update(url).digest("hex").slice(0, 16);
 }
 
 /** URL-safe redaction for any log line that might carry the connection string. */
@@ -162,6 +200,12 @@ function attachStatic(
 
 export function createServerApp(config: ServerAppConfig) {
   const db = new SQL(config.databaseUrl);
+
+  const connectionId = connectionIdFromUrl(config.databaseUrl);
+  const backupStore =
+    config.backupStore ??
+    BackupStore.open(join(homedir(), ".pg-studio", "backups", `${connectionId}.sqlite`));
+  backupStore.init();
 
   const app = (
     new Elysia({ name: "pg-studio-server" })
@@ -255,8 +299,187 @@ export function createServerApp(config: ServerAppConfig) {
           },
         },
       )
+      .post(
+        "/api/schemas/:schema/tables/:table/save",
+        async ({ params, body }) => {
+          const totalOps =
+            body.updates.length + body.deletes.length + body.inserts.length;
+          if (totalOps === 0) {
+            return status(400, { error: "no operations submitted" });
+          }
+
+          const [columns, pks] = await Promise.all([
+            listColumns(db, params.schema, params.table),
+            listPrimaryKeys(db),
+          ]);
+          const knownColumns = new Set(columns.map(c => c.name));
+          const pkColumns =
+            pks.find(p => p.schema === params.schema && p.table === params.table)?.columns ?? [];
+          const needsPk = body.updates.length + body.deletes.length > 0;
+          if (needsPk && pkColumns.length === 0) {
+            return status(400, { error: "table has no primary key; edits are not supported" });
+          }
+
+          for (const op of [...body.updates, ...body.deletes]) {
+            if (op.pkValues.some(v => v === null)) {
+              return status(400, { error: "primary key values must not be null" });
+            }
+            if (op.pkValues.length !== pkColumns.length) {
+              return status(400, {
+                error: `pk arity mismatch: expected ${pkColumns.length} value(s)`,
+              });
+            }
+          }
+          for (const update of body.updates) {
+            if (Object.keys(update.set).length === 0) {
+              return status(400, { error: "update requires at least one column" });
+            }
+            for (const column of Object.keys(update.set)) {
+              if (!knownColumns.has(column)) {
+                return status(400, { error: `unknown column "${column}"` });
+              }
+            }
+          }
+          for (const insert of body.inserts) {
+            for (const column of Object.keys(insert.values)) {
+              if (!knownColumns.has(column)) {
+                return status(400, { error: `unknown column "${column}"` });
+              }
+            }
+            if (Object.keys(insert.values).length === 0) {
+              return status(400, { error: "insert requires at least one value" });
+            }
+          }
+
+          // Before-images for every targeted row in ONE statement.
+          const targets = [...body.updates.map(u => u.pkValues), ...body.deletes.map(d => d.pkValues)];
+          const beforeRows: Array<Record<string, unknown>> = [];
+          if (targets.length > 0) {
+            const select = compileSelectByPkTuples({
+              schema: params.schema,
+              table: params.table,
+              pkColumns,
+              tuples: targets,
+            });
+            beforeRows.push(...(await db.unsafe(select.text, select.params)));
+          }
+          // PK tuples arrive as positional arrays; rows are objects. Two shapes.
+          const tupleKey = (values: readonly unknown[]) => JSON.stringify(values);
+          const beforeByKey = new Map(beforeRows.map(row => [tupleKey(pkColumns.map(c => row[c])), row]));
+
+          const snapshots: SnapshotInput[] = [];
+          const appliedUpdates: SaveBody["updates"] = [];
+          const appliedDeletes: SaveBody["deletes"] = [];
+          let skipped = 0;
+          for (const update of body.updates) {
+            const before = beforeByKey.get(tupleKey(update.pkValues));
+            if (!before) {
+              skipped++;
+              continue;
+            }
+            appliedUpdates.push(update);
+            snapshots.push({
+              schema: params.schema,
+              table: params.table,
+              pkValues: update.pkValues as SnapshotInput["pkValues"],
+              operation: "update",
+              beforeImage: before,
+            });
+          }
+          for (const remove of body.deletes) {
+            const before = beforeByKey.get(tupleKey(remove.pkValues));
+            if (!before) {
+              skipped++;
+              continue;
+            }
+            appliedDeletes.push(remove);
+            snapshots.push({
+              schema: params.schema,
+              table: params.table,
+              pkValues: remove.pkValues as SnapshotInput["pkValues"],
+              operation: "delete",
+              beforeImage: before,
+            });
+          }
+          for (const insert of body.inserts) {
+            snapshots.push({
+              schema: params.schema,
+              table: params.table,
+              pkValues: [],
+              operation: "insert",
+              beforeImage: null,
+            });
+          }
+
+          // Non-negotiable #3: pending snapshots exist BEFORE Postgres is touched.
+          const batchId = backupStore.beginBatch(
+            connectionId,
+            `${params.schema}.${params.table}`,
+          );
+          try {
+            if (snapshots.length > 0) backupStore.addSnapshots(batchId, snapshots);
+
+            await db.begin(async tx => {
+              for (const update of appliedUpdates) {
+                const pk = Object.fromEntries(pkColumns.map((c, i) => [c, update.pkValues[i]]));
+                const compiled = compileUpdate({
+                  schema: params.schema,
+                  table: params.table,
+                  set: update.set,
+                  pk: pk as Record<string, string | number | boolean | null>,
+                });
+                await tx.unsafe(compiled.text, compiled.params);
+              }
+              for (const remove of appliedDeletes) {
+                const pk = Object.fromEntries(pkColumns.map((c, i) => [c, remove.pkValues[i]]));
+                const compiled = compileDelete({
+                  schema: params.schema,
+                  table: params.table,
+                  pk: pk as Record<string, string | number | boolean | null>,
+                });
+                await tx.unsafe(compiled.text, compiled.params);
+              }
+              for (const insert of body.inserts) {
+                const compiled = compileInsert({
+                  schema: params.schema,
+                  table: params.table,
+                  values: insert.values,
+                });
+                await tx.unsafe(compiled.text, compiled.params);
+              }
+            });
+
+            backupStore.confirmBatch(batchId);
+            return {
+              batchId,
+              appliedUpdates: appliedUpdates.length,
+              appliedDeletes: appliedDeletes.length,
+              appliedInserts: body.inserts.length,
+              skipped,
+            };
+          } catch (error) {
+            // Failed Postgres writes must never look restorable.
+            backupStore.failBatch(batchId);
+            return status(500, {
+              error: `save failed: ${(error as Error).message}`,
+              batchId,
+            });
+          }
+        },
+        {
+          params: t.Object({ schema: IdentParam, table: IdentParam }),
+          body: SaveBodySchema,
+          response: {
+            200: SaveResultSchema,
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            500: t.Object({ error: t.String(), batchId: t.String() }),
+          },
+        },
+      )
       .onStop(async () => {
         await db.close();
+        backupStore.close();
       })
   );
 

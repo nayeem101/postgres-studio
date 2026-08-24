@@ -127,3 +127,13 @@ insert into app.tasks (id, project_id, title, status) values
 insert into public.links (id, project_id, url) values
   (1, 1, 'https://example.com/alpha-spec'),
   (2, 1, 'https://example.com/alpha-notes');
+
+-- Explicit-id inserts do not advance identity sequences; sync them so
+-- auto-generated ids never collide with seeded rows.
+select setval(pg_get_serial_sequence('public.employees', 'id'), (select max(id) from public.employees));
+select setval(pg_get_serial_sequence('public.order_items', 'id'), (select max(id) from public.order_items));
+select setval(pg_get_serial_sequence('public.customers', 'id'), (select max(id) from public.customers));
+select setval(pg_get_serial_sequence('public.addresses', 'id'), (select max(id) from public.addresses));
+select setval(pg_get_serial_sequence('public.links', 'id'), (select max(id) from public.links));
+select setval(pg_get_serial_sequence('app.projects', 'id'), (select max(id) from app.projects));
+select setval(pg_get_serial_sequence('app.tasks', 'id'), (select max(id) from app.tasks));

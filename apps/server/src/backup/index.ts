@@ -237,16 +237,23 @@ export class BackupStore {
     if (typeof r.schema !== "string" || r.schema.length === 0 || typeof r.table !== "string" || r.table.length === 0) {
       throw new BackupStoreError("snapshot requires schema and table");
     }
-    if (!Array.isArray(r.pkValues) || r.pkValues.length === 0) {
-      throw new BackupStoreError("snapshot requires a non-empty pk tuple");
-    }
     if (!["insert", "update", "delete"].includes(r.operation)) {
       throw new BackupStoreError(`unknown snapshot operation ${String(r.operation)}`);
     }
-    if (r.operation === "insert" && r.beforeImage !== null) {
-      throw new BackupStoreError("insert snapshots must not carry a before image");
+    if (r.operation === "insert") {
+      // The row does not exist yet: no PK, no before image.
+      if (r.pkValues.length !== 0) {
+        throw new BackupStoreError("insert snapshots must not carry a pk tuple");
+      }
+      if (r.beforeImage !== null) {
+        throw new BackupStoreError("insert snapshots must not carry a before image");
+      }
+      return;
     }
-    if ((r.operation === "update" || r.operation === "delete") && r.beforeImage === null) {
+    if (!Array.isArray(r.pkValues) || r.pkValues.length === 0) {
+      throw new BackupStoreError(`${r.operation} snapshots require a non-empty pk tuple`);
+    }
+    if (r.beforeImage === null) {
       throw new BackupStoreError(`${r.operation} snapshots require a before image`);
     }
   }

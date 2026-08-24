@@ -74,16 +74,21 @@ describe("batch lifecycle", () => {
 });
 
 describe("snapshot capture rules", () => {
-  test("update/delete require before images; insert forbids them", () => {
+  test("update/delete require before images; insert forbids pk and image", () => {
     const id = store.beginBatch("conn-1");
     expect(() => store.addSnapshots(id, [updateSnapshot({ beforeImage: null })])).toThrow(
       /require a before image/,
     );
     expect(() =>
       store.addSnapshots(id, [
-        { schema: "public", table: "orders", pkValues: [1], operation: "insert", beforeImage: { x: 1 } },
+        { schema: "public", table: "orders", pkValues: [1], operation: "insert", beforeImage: null },
       ]),
-    ).toThrow(/must not carry/);
+    ).toThrow(/must not carry a pk/);
+    expect(() =>
+      store.addSnapshots(id, [
+        { schema: "public", table: "orders", pkValues: [], operation: "insert", beforeImage: { x: 1 } },
+      ]),
+    ).toThrow(/must not carry a before image/);
   });
 
   test("capture is atomic: one bad record rolls back the whole batch payload", () => {
@@ -114,7 +119,7 @@ describe("snapshot capture rules", () => {
         operation: "delete",
         beforeImage: { id: 7, name: "Ada", manager_id: null },
       },
-      { schema: "app", table: "tasks", pkValues: [3], operation: "insert", beforeImage: null },
+      { schema: "app", table: "tasks", pkValues: [], operation: "insert", beforeImage: null },
     ]);
 
     const snapshots = store.getSnapshots(id);
