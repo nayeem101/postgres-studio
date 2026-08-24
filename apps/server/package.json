@@ -12,7 +12,8 @@
     "spike": "bun src/cli.ts"
   },
   "dependencies": {
+    "@pg-studio/api": "workspace:*",
     "@pg-studio/db": "workspace:*",
-    "@pg-studio/api": "workspace:*"
+    "elysia": "1.4.29"
   }
 }

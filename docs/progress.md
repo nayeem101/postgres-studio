@@ -50,8 +50,10 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
   **Evidence:** `bun run test` → 90 pass / 0 fail; `tests/integration/fks.test.ts` asserts outgoing self-FK (`employees.manager_id`, SET NULL), composite FK (`order_items[shop_id,order_no] → orders`, CASCADE), incoming for `orders`/`employees`, and empty results for leaf tables  
   **Notes:** `packages/db/src/fks.ts` via `pg_constraint` with positional pairing of `conkey/confkey` (composite columns stay aligned); direction filters verified against fixture. Gotcha recorded: reusing a shared SQL fragment across concurrent queries misapplied appended WHERE — fragments are now built fresh per call.
 
-- [ ] Minimal Elysia app: schema validation on one endpoint, hot reload, path params, TypeBox errors  
-  **Acceptance:** invalid body returns validation error; valid body 200
+- [x] Minimal Elysia app: schema validation on one endpoint, hot reload, path params, TypeBox errors  
+  **Done:** 2026-08-24  
+  **Evidence:** `bun test tests/integration/elysia-spike.test.ts` → 7 pass / 0 fail (`app.handle` request-level, no network); live boot check `PORT=3999 bun apps/server/src/index.ts` → `/health` = `{"ok":true}`, `/spike/hello/grace` = `{"message":"hello, grace"}`; full gate `bun run test` → 97 pass / 0 fail, `bun run typecheck` exit 0  
+  **Notes:** `apps/server/src/spike-app.ts` is the Phase 0 surface (prefix `/spike`, DB-free). Invalid body/type/range → 422 with TypeBox validation payload. `dev` script runs `bun --hot src/index.ts`. elysia pinned in `apps/server`, eden in `packages/api`.
 
 - [ ] Eden Treaty throwaway client fetch against that endpoint  
   **Acceptance:** typed client compiles and round-trips
