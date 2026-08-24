@@ -4,5 +4,17 @@
     "edit": "allow",
     "bash": "ask",
     "external_directory": "deny"
+  },
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": [
+        "playwright-mcp",
+        "--headless",
+        "--browser=chrome",
+        "--allowed-hosts=localhost,127.0.0.1"
+      ],
+      "enabled": true
+    }
   }
 }
