@@ -29,6 +29,7 @@ create table public.orders (
   shop_id integer not null,
   order_no integer not null,
   total numeric(10, 2) not null default 0,
+  delivery_address_id integer,
   primary key (shop_id, order_no)
 );
 

@@ -48,7 +48,7 @@ describe("GET /api/schemas/:schema/tables/:table", () => {
 
     expect(detail.table).toEqual({ schema: "public", name: "orders", kind: "table" });
     expect(detail.primaryKey).toEqual(["shop_id", "order_no"]);
-    expect(detail.columns.map(c => c.name)).toEqual(["shop_id", "order_no", "total"]);
+    expect(detail.columns.map(c => c.name)).toEqual(["shop_id", "order_no", "total", "delivery_address_id"]);
     expect(detail.fks.incoming.map(f => `${f.childSchema}.${f.childTable}`)).toEqual([
       "public.order_items",
     ]);

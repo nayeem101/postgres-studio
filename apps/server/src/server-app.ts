@@ -9,6 +9,7 @@ import {
   compileInsert,
   compileSelectByPkTuples,
   compileUpdate,
+  inferRelations,
   listColumns,
   listEnums,
   listIncomingFks,
@@ -252,6 +253,39 @@ export function createServerApp(config: ServerAppConfig) {
           response: {
             200: TableDetailSchema,
             404: ApiErrorSchema,
+          },
+        },
+      )
+      .get(
+        "/api/schemas/:schema/tables/:table/inferred",
+        async ({ params }) => {
+          const [tables, columns, outgoing] = await Promise.all([
+            listTables(db),
+            listColumns(db, params.schema, params.table),
+            listOutgoingFks(db, params.schema, params.table),
+          ]);
+          const inferred = inferRelations({
+            schema: params.schema,
+            table: params.table,
+            columns: columns.map(c => ({ name: c.name })),
+            tables: tables.map(t => ({ schema: t.schema, name: t.name })),
+            realFkChildColumns: outgoing.map(fk => fk.childColumns),
+          });
+          return { inferred };
+        },
+        {
+          params: t.Object({ schema: IdentParam, table: IdentParam }),
+          response: {
+            200: t.Object({
+              inferred: t.Array(
+                t.Object({
+                  column: t.String(),
+                  parentSchema: t.String(),
+                  parentTable: t.String(),
+                  confidence: t.Union([t.Literal("strong"), t.Literal("weak")]),
+                }),
+              ),
+            }),
           },
         },
       )

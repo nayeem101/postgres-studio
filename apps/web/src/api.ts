@@ -89,6 +89,14 @@ export interface StudioClient {
     offset?: number,
     limit?: number,
   ): Promise<{ groups: IncomingGroup[] }>;
+  getInferredRelations(schema: string, table: string): Promise<InferredRelation[]>;
+}
+
+export interface InferredRelation {
+  column: string;
+  parentSchema: string;
+  parentTable: string;
+  confidence: "strong" | "weak";
 }
 
 export const studioClient: StudioClient = {
@@ -141,5 +149,10 @@ export const studioClient: StudioClient = {
     });
     if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
     return res.data;
+  },
+  async getInferredRelations(schema, table) {
+    const res = await api.api.schemas({ schema }).tables({ table }).inferred.get();
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return res.data.inferred;
   },
 };

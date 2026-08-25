@@ -59,3 +59,4 @@ export {
   type OutgoingReference,
   type ResolveOptions,
 } from "./references";
+export { inferRelations, type InferredRelation } from "./inferred";

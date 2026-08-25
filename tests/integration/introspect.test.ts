@@ -63,6 +63,7 @@ describe("listColumns", () => {
       shop_id: false,
       order_no: false,
       total: false,
+      delivery_address_id: true,
     });
   });
 

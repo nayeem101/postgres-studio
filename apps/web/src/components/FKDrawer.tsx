@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import type { CellValue, IncomingGroup, OutgoingReference, Row, StudioClient } from "../api";
+import type { CellValue, IncomingGroup, InferredRelation, OutgoingReference, Row, StudioClient } from "../api";
 
 export interface DrawerTarget {
   schema: string;
@@ -41,6 +41,7 @@ function usePkColumns(client: StudioClient, schema: string | undefined, table: s
  */
 export function FKDrawer({ target, client, onNavigate, onClose, canGoBack, onBack }: FKDrawerProps) {
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [showInferred, setShowInferred] = useState(false);
 
   const outgoingQuery = useQuery({
     queryKey: ["outgoing", target.schema, target.table, JSON.stringify(target.pkValues)],
@@ -50,9 +51,17 @@ export function FKDrawer({ target, client, onNavigate, onClose, canGoBack, onBac
     queryKey: ["incoming", target.schema, target.table, JSON.stringify(target.pkValues)],
     queryFn: () => client.incomingReferences(target.schema, target.table, target.pkValues),
   });
+  // Opt-in heuristics: never fetched unless the user asks for them.
+  const inferredQuery = useQuery({
+    queryKey: ["inferred", target.schema, target.table],
+    queryFn: () => client.getInferredRelations(target.schema, target.table),
+    enabled: showInferred,
+    staleTime: Infinity,
+  });
 
   const outgoing: OutgoingReference[] = outgoingQuery.data?.outgoing ?? [];
   const groups: IncomingGroup[] = (incomingQuery.data?.groups ?? []).filter(g => g.totalCount > 0);
+  const inferred: InferredRelation[] = showInferred ? (inferredQuery.data ?? []) : [];
 
   return (
     <aside aria-label="fk drawer" className="w-96 shrink-0 overflow-y-auto border-l border-border p-3 text-sm">
@@ -61,7 +70,7 @@ export function FKDrawer({ target, client, onNavigate, onClose, canGoBack, onBac
           {target.schema}.{target.table}
         </h2>
         <span className="text-xs text-muted-foreground">({target.pkValues.join(", ")})</span>
-        <div className="ml-auto flex gap-1">
+        <div className="ml-auto flex items-center gap-1">
           {canGoBack ? (
             <button
               type="button"
@@ -72,6 +81,15 @@ export function FKDrawer({ target, client, onNavigate, onClose, canGoBack, onBac
               ← Back
             </button>
           ) : null}
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              aria-label="Show inferred relationships"
+              checked={showInferred}
+              onChange={event => setShowInferred(event.target.checked)}
+            />
+            Inferred
+          </label>
           <button
             type="button"
             aria-label="Close drawer"
@@ -164,6 +182,31 @@ export function FKDrawer({ target, client, onNavigate, onClose, canGoBack, onBac
             );
           })}
         </ul>
+      </section>
+      <section aria-label="inferred relationships" className="mt-4">
+        {showInferred ? (
+          <>
+            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Inferred relationships
+            </h3>
+            {inferred.length === 0 && !inferredQuery.isPending ? (
+              <p className="text-muted-foreground">No name-based candidates</p>
+            ) : null}
+            <ul>
+              {inferred.map(relation => (
+                <li
+                  key={relation.column}
+                  className="mb-1 rounded border border-dashed border-border p-2 italic"
+                >
+                  {relation.column} → {relation.parentSchema}.{relation.parentTable}{" "}
+                  <span aria-label={`${relation.confidence} confidence`} className="text-xs not-italic text-muted-foreground">
+                    (inferred, {relation.confidence})
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </section>
     </aside>
   );

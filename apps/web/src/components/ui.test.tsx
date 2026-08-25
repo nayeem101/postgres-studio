@@ -64,6 +64,7 @@ function makeRowClient(totalRows: number, pageSize = 50) {
     },
     outgoingReferences: async () => ({ outgoing: [] }),
     incomingReferences: async () => ({ groups: [] }),
+    getInferredRelations: async () => [],
   };
   return { client, calls, savedPayloads, setSaveShouldFail: (v: boolean) => (saveShouldFail = v) };
 }
@@ -77,6 +78,7 @@ function stubClient(overrides: Partial<StudioClient> = {}): StudioClient {
     saveRows: async () => ({ batchId: "batch-x" }),
     outgoingReferences: async () => ({ outgoing: [] }),
     incomingReferences: async () => ({ groups: [] }),
+    getInferredRelations: async () => [],
     ...overrides,
   };
 }
@@ -351,7 +353,7 @@ describe("AddRowForm", () => {
 });
 
 describe("FKDrawer", () => {
-  function referenceClient(log: { navigated: DrawerTarget[]; loadedMore: number[] }) {
+  function referenceClient(log: { navigated: DrawerTarget[]; loadedMore: number[]; inferredCalls?: number[] }) {
     const base = makeRowClient(3);
     return {
       client: {
@@ -389,6 +391,17 @@ describe("FKDrawer", () => {
               },
             ],
           };
+        },
+        getInferredRelations: async () => {
+          log.inferredCalls?.push(1);
+          return [
+            {
+              column: "delivery_address_id",
+              parentSchema: "public",
+              parentTable: "addresses",
+              confidence: "strong" as const,
+            },
+          ];
         },
       } as StudioClient,
       savedPayloads: base.savedPayloads,
@@ -446,6 +459,39 @@ describe("FKDrawer", () => {
       schema: "public",
       table: "employees",
       pkValues: [2],
+    });
+  });
+
+  describe("Inferred relationships toggle", () => {
+    const ordersTarget: DrawerTarget = { schema: "public", table: "orders", pkValues: [1, 100] };
+
+    test("off by default — heuristics endpoint never fetched", async () => {
+      const log = { navigated: [] as DrawerTarget[], loadedMore: [] as number[], inferredCalls: [] as number[] };
+      const { client } = referenceClient(log);
+      renderWithQuery(
+        <FKDrawer target={ordersTarget} client={client} onNavigate={() => {}} onClose={() => {}} />,
+      );
+
+      await screen.findByText("Ada Lovelace"); // drawer settled
+      await new Promise(resolve => setTimeout(resolve, 30));
+      expect(log.inferredCalls).toEqual([]);
+      expect(screen.queryByText("Inferred relationships")).toBeNull();
+    });
+
+    test("toggling on shows dashed, labeled inferred rows (distinct from real FKs)", async () => {
+      const log = { navigated: [] as DrawerTarget[], loadedMore: [] as number[], inferredCalls: [] as number[] };
+      const { client } = referenceClient(log);
+      renderWithQuery(
+        <FKDrawer target={ordersTarget} client={client} onNavigate={() => {}} onClose={() => {}} />,
+      );
+
+      fireEvent.click(await screen.findByLabelText("Show inferred relationships"));
+      expect(await screen.findByText("Inferred relationships")).toBeDefined();
+      const entry = await screen.findByText(/delivery_address_id → public\.addresses/);
+      // visually distinct: dashed border + italic
+      expect((entry.closest("li") as HTMLElement).className).toContain("border-dashed");
+      expect(screen.getByText(/inferred, strong/)).toBeDefined();
+      expect(log.inferredCalls.length).toBeGreaterThan(0);
     });
   });
 });

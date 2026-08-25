@@ -2,14 +2,14 @@
 
 Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-and-plan.md) §§6–7a. Update this file when a task is actually verified ([agent-workflow.md](agent-workflow.md)).
 
-**Status:** Phase 0 complete. Phase 1 complete. Phase 2 (bidirectional FK drawer) not started.
+**Status:** Phases 0–2 complete. Phase 3 (write-path safety) not started.
 
 | Phase | Status |
 |---|---|
 | Bootstrap (skills, rules, workflow, monorepo) | done |
 | Phase 0 — Spike | done |
 | Phase 1 — Core browsing | done |
-| Phase 2 — Bidirectional FK panel | not started |
+| Phase 2 — Bidirectional FK panel | done |
 | Phase 3 — Write-path safety | not started |
 | Phase 4 — Distribution | not started |
 
@@ -141,20 +141,33 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
 
 ## Phase 2 — Bidirectional FK panel
 
-- [ ] References (outgoing): FK columns resolve to target row preview, not ID-only  
-  **Acceptance:** preview shows target PK + a display column
+- [x] References (outgoing): FK columns resolve to target row preview, not ID-only  
+  **Acceptance:** preview shows target PK + a display column  
+  **Done:** 2026-08-25  
+  **Evidence:** `resolveOutgoingReferences` + `pickDisplayColumn` (5 unit tests); integration `references.test.ts` proves self-FK resolves to manager preview with display column `name`, NULL FK → unresolved preview, unknown row → 404  
+  **Notes:** previews carry `parentColumns` so click-through navigates by exact referenced tuple.
 
-- [ ] Referenced by (incoming): grouped by source table, paginated, count badges  
-  **Acceptance:** badge count matches `COUNT(*)` for that FK
+- [x] Referenced by (incoming): grouped by source table, paginated, count badges  
+  **Acceptance:** badge count matches `COUNT(*)` for that FK  
+  **Done:** 2026-08-25  
+  **Evidence:** integration test asserts `totalCount` equals direct SQL `COUNT(*)` for order_items→orders; pagination via `nextOffset` proven (limit 2 of 3 → second page 1 row, null offset)  
+  **Notes:** fixed placeholder-index bug ($0) caught by the count tests.
 
-- [ ] Click-through re-centers drawer; breadcrumb history back  
-  **Acceptance:** back returns to previous row/table
+- [x] Click-through re-centers drawer; breadcrumb history back  
+  **Acceptance:** back returns to previous row/table  
+  **Done:** 2026-08-25  
+  **Evidence:** component tests: preview click-through navigates by parent's referenced columns; child-row click-through uses child table PK; App-level A→B→C→Back flow pops one level at a time  
+  **Notes:** drawer replaces detail panel while open.
 
-- [ ] Self-referential loop guard (depth cap / visited dedupe)  
-  **Acceptance:** self-FK cannot recurse unbounded
+- [x] Self-referential loop guard (depth cap / visited dedupe)  
+  **Acceptance:** self-FK cannot recurse unbounded  
+  **Done:** 2026-08-25  
+  **Evidence:** navigation guard truncates forward history when returning to an earlier stack entry (breadcrumb semantics), plus depth cap 25 — asserted in "A→B→C then returning to B truncates forward history" component test  
 
-- [ ] Inferred-relationships toggle (name heuristics), visually distinct from real FKs  
-  **Acceptance:** inferred rows labeled; default off
+- [x] Inferred-relationships toggle (name heuristics), visually distinct from real FKs  
+  **Acceptance:** inferred rows labeled; default off  
+  **Done:** 2026-08-25  
+  **Evidence:** pure `inferRelations` (singular/plural + trailing-segment heuristics, real-FK exclusion, self-edge guard) unit-tested; `/inferred` endpoint integration-tested (`delivery_address_id → addresses` strong; manager_id excluded as real FK); drawer toggle default OFF never fetches heuristics, ON renders dashed italic rows labeled "(inferred, confidence)" — both asserted in component tests  
 
 ---
 
