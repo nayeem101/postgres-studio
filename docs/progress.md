@@ -2,7 +2,7 @@
 
 Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-and-plan.md) §§6–7a. Update this file when a task is actually verified ([agent-workflow.md](agent-workflow.md)).
 
-**Status:** Phases 0–2 complete. Phase 3 (write-path safety) not started.
+**Status:** Phases 0–3 implemented. Phase 3 human gates outstanding: manual failed-write run, real cascading delete, composite-key restore, mid-batch restore failure, schema-drift drill.
 
 | Phase | Status |
 |---|---|
@@ -10,7 +10,7 @@ Source: [postgres-studio-feasibility-and-plan.md](postgres-studio-feasibility-an
 | Phase 0 — Spike | done |
 | Phase 1 — Core browsing | done |
 | Phase 2 — Bidirectional FK panel | done |
-| Phase 3 — Write-path safety | not started |
+| Phase 3 — Write-path safety | code complete; human gates open |
 | Phase 4 — Distribution | not started |
 
 ---
@@ -178,31 +178,40 @@ Human gates: do not check these off without a person running the listed cases.
 - [ ] Before-image capture on INSERT/UPDATE/DELETE; `bun:sqlite` undo log; two-phase pending → mutate → confirmed/failed  
   **Acceptance:** failed Postgres write never appears as restorable in History  
   **Verify:** `bun test` mutation/snapshot tests + manual failed-write  
-  **Foundation done:** 2026-08-24 — `apps/server/src/backup/index.ts` BackupStore (batches+snapshots schema, pending→confirmed/failed state machine, atomic snapshot capture, restorable = confirmed only). Evidence: `bun run test` → 139 pass / 0 fail incl. 9 store lifecycle tests. Still open: Postgres mutation wiring, cascade-aware capture, manual failed-write verification.
+  **Progress:** 2026-08-25 — fully wired: pre-tx pending batch + before-images, single `db.begin` tx, confirm/fail state machine, insert rows captured post-tx via RETURNING while still pending. Programmatic proof in `restore-api.test.ts` (failed FK-violation save → batch absent from History, snapshots GET 404s). **Awaiting human:** one manual failed-write run before checking this off.  
 
 - [ ] Cascade-aware snapshotting (reuse incoming-FK / `confdeltype = 'c'`)  
   **Acceptance:** deleting a parent snapshots cascaded children  
-  **Human gate:** cascading deletes
+  **Human gate:** cascading deletes  
+  **Progress:** 2026-08-25 — `collectCascadingRows` (packages/db/src/cascades.ts) BFS over CASCADE + SET NULL edges with visited-dedupe for self/mutual cycles; save flow captures children pre-tx (`cascadedDeletes` in response); restore brings back customer + 3 addresses in one transaction (`restore-api.test.ts`). **Awaiting human:** run a real cascading delete against a scratch DB.  
 
-- [ ] History UI: batches, before → after diff, restore per row or per batch  
-  **Acceptance:** restore batch is one Postgres transaction
+- [x] History UI: batches, before → after diff, restore per row or per batch  
+  **Acceptance:** restore batch is one Postgres transaction  
+  **Done:** 2026-08-25  
+  **Evidence:** `HistoryPanel.tsx` lists confirmed-only batches (server-filtered), renders per-snapshot diffs from before/after images (updates get real after-images attached post-tx while pending), Restore button → `POST /api/history/batches/:id/restore` executed inside a single `db.begin` transaction; component tests cover list/diff/restore + empty state.  
 
-- [ ] Delete confirmation shows FK impact counts before commit  
-  **Acceptance:** counts match incoming-FK query
+- [x] Delete confirmation shows FK impact counts before commit  
+  **Acceptance:** counts match incoming-FK query  
+  **Done:** 2026-08-25  
+  **Evidence:** Save with staged deletes opens an alertdialog fed by the same `references/incoming` endpoint the drawer badge uses (single source of truth for counts); commit happens only on "Confirm & save"; cancel/discard abort cleanly — covered in `ui.test.tsx`.  
 
-- [ ] Transaction-wrapped saves; optimistic UI rolls back on failure  
-  **Acceptance:** UI reverts pending overlay if API errors
+- [x] Transaction-wrapped saves; optimistic UI rolls back on failure  
+  **Acceptance:** UI reverts pending overlay if API errors  
+  **Done:** 2026-08-24 (Phase 1 slice) + re-verified 2026-08-25  
+  **Evidence:** all operations apply in one `db.begin` per save; `ui.test.tsx` "failed save keeps pending changes visible with an alert" asserts staged edits survive a rejected save.  
 
-- [ ] Retention/pruning (age, size cap, manual clear)  
-  **Acceptance:** prune command respects config; History empty after clear
+- [x] Retention/pruning (age, size cap, manual clear)  
+  **Acceptance:** prune command respects config; History empty after clear  
+  **Done:** 2026-08-25  
+  **Evidence:** `BackupStore.prune/clearAll` unit-tested (age cutoffs, newest-N keep, connection scoping, clear→empty History); CLI `apps/server/src/prune-cli.ts` smoke-run against live store file.  
 
 - [ ] Restore topological order; composite keys; schema-drift error  
   **Human gates:** composite keys; failed mid-batch restore; schema drift  
-  **Acceptance:** drift surfaces an error; no silent column drop
+  **Acceptance:** drift surfaces an error; no silent column drop  
+  **Progress:** 2026-08-25 — implemented + integration-tested: parents-before-children via `topoRestoreOrder`, deletes-of-inserts child-first, composite PK tuples honored from catalog metadata, dropped-column drift → 409 naming the column with zero mutations applied. **Awaiting human:** run composite-key and mid-batch-failure cases by hand.  
 
-- [ ] `code-review` skill run on backup/cascade/write-path  
-  **Evidence:** date + findings file or notes in this row  
-  **Notes:** agent review is not a substitute for human gates above
+- [x] `code-review` skill run on backup/cascade/write-path  
+  **Evidence:** 2026-08-25, scope = commits `cascade/restore`, `history panel`, `pruning`. Findings fixed during review: (1) placeholder insert snapshots shadowed RETURNING captures so undo could not target generated rows; (2) restore picked PK columns by name guess, breaking `order_no`-style composites — now catalog-driven; (3) `markRestored` did not block re-restores — `restored_at` guard added. Accepted trade-offs documented: cascade capture reads children pre-tx (TOCTOU acceptable for local single-user tool); unbounded child capture is required for complete undo; `GENERATED ALWAYS` identity re-insert fails loudly and keeps the batch restorable (safe direction); crash between commit and `markRestored` can allow a repeat restore. No injection paths found — all dynamic SQL parameterized, identifiers quote-validated.  
 
 - [ ] Global search across tables (optional)  
   **Acceptance:** searches configured columns; pagination
