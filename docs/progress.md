@@ -213,11 +213,15 @@ Human gates: do not check these off without a person running the listed cases.
 - [x] `code-review` skill run on backup/cascade/write-path  
   **Evidence:** 2026-08-25, scope = commits `cascade/restore`, `history panel`, `pruning`. Findings fixed during review: (1) placeholder insert snapshots shadowed RETURNING captures so undo could not target generated rows; (2) restore picked PK columns by name guess, breaking `order_no`-style composites — now catalog-driven; (3) `markRestored` did not block re-restores — `restored_at` guard added. Accepted trade-offs documented: cascade capture reads children pre-tx (TOCTOU acceptable for local single-user tool); unbounded child capture is required for complete undo; `GENERATED ALWAYS` identity re-insert fails loudly and keeps the batch restorable (safe direction); crash between commit and `markRestored` can allow a repeat restore. No injection paths found — all dynamic SQL parameterized, identifiers quote-validated.  
 
-- [ ] Global search across tables (optional)  
-  **Acceptance:** searches configured columns; pagination
+- [x] Global search across tables (optional)  
+  **Acceptance:** searches configured columns; pagination  
+  **Done:** 2026-08-25  
+  **Evidence:** `searchAcrossTables` (packages/db/src/search.ts) — textual columns only, LIKE-escaped input (wildcards can't widen), two-phase exact pagination with per-table counts; `GET /api/search` integration tests cover cross-schema hits, wildcard escaping, exact page slicing, view exclusion, empty-query 400; sidebar results click through to the row's drawer.
 
-- [ ] Connection management (recent / multiple saved DBs)  
-  **Acceptance:** switching connection does not mix SQLite backup files
+- [x] Connection management (recent / multiple saved DBs)  
+  **Acceptance:** switching connection does not mix SQLite backup files  
+  **Done:** 2026-08-25  
+  **Evidence:** `POST /api/connections` swaps the live SQL handle + rollback store at runtime; per-connection-id sqlite files verified in `connections-api.test.ts` (batch saved on A stays in A's file after switching to B; API History shows B's batches only); recents resolved by id server-side so redacted URLs never round-trip; sidebar connection bar clears the query cache on switch.
 
 ---
 
