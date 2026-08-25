@@ -40,7 +40,15 @@ export function App({ client = studioClient }: { client?: StudioClient }) {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <Sidebar client={client} selected={selected} onSelect={selectTable} />
+      <Sidebar
+        client={client}
+        selected={selected}
+        onSelect={selectTable}
+        onOpenRow={(schema, table, pkValues) => {
+          selectTable({ schema, name: table });
+          navigateTo({ schema, table, pkValues });
+        }}
+      />
       <main className="flex min-w-0 flex-1 flex-col">
         {selected ? (
           <div className="flex min-h-0 flex-1">

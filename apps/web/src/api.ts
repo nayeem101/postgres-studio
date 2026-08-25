@@ -93,6 +93,20 @@ export interface StudioClient {
   listHistory(): Promise<HistoryBatch[]>;
   getBatchSnapshots(batchId: string): Promise<BatchSnapshots>;
   restoreBatch(batchId: string): Promise<RestoreResult>;
+  globalSearch(query: string, offset?: number, limit?: number): Promise<SearchPage>;
+}
+
+export interface SearchPage {
+  results: Array<{
+    schema: string;
+    table: string;
+    pkColumns: string[];
+    pkValues: CellValue[];
+    matchedColumn: string;
+    snippet: string;
+  }>;
+  total: number;
+  nextOffset: number | null;
 }
 
 export interface HistoryBatch {
@@ -211,6 +225,11 @@ export const studioClient: StudioClient = {
   },
   async restoreBatch(batchId) {
     const res = await api.api.history.batches({ batchId }).restore.post();
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return res.data;
+  },
+  async globalSearch(query, offset = 0, limit = 20) {
+    const res = await api.api.search.get({ query: { q: query, offset, limit } });
     if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
     return res.data;
   },

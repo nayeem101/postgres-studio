@@ -726,6 +726,57 @@ describe("HistoryPanel", () => {
   });
 });
 
+describe("Global search (sidebar)", () => {
+  function searchableClient(log: { openedRow: Array<{ schema: string; table: string; pkValues: CellValue[] }> }) {
+    return stubClient({
+      listTables: async () => [{ schema: "public", name: "t", kind: "table" }],
+      globalSearch: async query =>
+        query === "ada"
+          ? {
+              results: [
+                {
+                  schema: "public",
+                  table: "employees",
+                  pkColumns: ["id"],
+                  pkValues: [1],
+                  matchedColumn: "name",
+                  snippet: "Ada Lovelace",
+                },
+              ],
+              total: 1,
+              nextOffset: null,
+            }
+          : { results: [], total: 0, nextOffset: null },
+    });
+  }
+
+  test("submitting a query lists hits; clicking one opens that row", async () => {
+    const log = { openedRow: [] as Array<{ schema: string; table: string; pkValues: CellValue[] }> };
+    const client = searchableClient(log);
+    renderWithQuery(
+      <Sidebar client={client} selected={null} onSelect={() => {}} onOpenRow={(schema, table, pkValues) => log.openedRow.push({ schema, table, pkValues })} />,
+    );
+
+    const input = await screen.findByLabelText("Search all tables");
+    fireEvent.change(input, { target: { value: "ada" } });
+    fireEvent.submit(input.closest("form")!);
+
+    const hit = await screen.findByRole("button", { name: /Ada Lovelace/ });
+    fireEvent.click(hit);
+    expect(log.openedRow).toEqual([{ schema: "public", table: "employees", pkValues: [1] }]);
+  });
+
+  test("no matches renders an empty state", async () => {
+    const client = searchableClient({ openedRow: [] });
+    renderWithQuery(<Sidebar client={client} selected={null} onSelect={() => {}} />);
+
+    const input = await screen.findByLabelText("Search all tables");
+    fireEvent.change(input, { target: { value: "zzz" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(await screen.findByText("No matches")).toBeDefined();
+  });
+});
+
 describe("App shell", () => {
   test("prompts to select a table before any selection is made", () => {
     renderWithQuery(<App client={makeRowClient(0).client} />);

@@ -66,3 +66,10 @@ export {
   type CascadeOptions,
   type CascadeRow,
 } from "./cascades";
+export {
+  likePattern,
+  searchAcrossTables,
+  type SearchCandidate,
+  type SearchPage,
+  type SearchResult,
+} from "./search";

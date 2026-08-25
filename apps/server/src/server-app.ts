@@ -22,6 +22,7 @@ import {
   pickDisplayColumn,
   resolveIncomingReferences,
   resolveOutgoingReferences,
+  searchAcrossTables,
 } from "@pg-studio/db";
 import { restoreBatch, RestoreError } from "./restore";
 import { BackupStore, type SnapshotInput } from "./backup";
@@ -226,6 +227,57 @@ export function createServerApp(config: ServerAppConfig) {
         "/api/enums",
         async () => ({ enums: await listEnums(db) }),
         { response: t.Object({ enums: t.Array(EnumMetaSchema) }) },
+      )
+      .get(
+        "/api/search",
+        async ({ query }) => {
+          const q = query.q.trim();
+          if (q.length === 0) {
+            return status(400, { error: "query must not be empty" });
+          }
+          const tables = (await listTables(db)).filter(t => t.kind === "table");
+          const candidates = await Promise.all(
+            tables.map(async table => ({
+              schema: table.schema,
+              name: table.name,
+              columns: await listColumns(db, table.schema, table.name),
+            })),
+          );
+          const pks = await listPrimaryKeys(db);
+          const page = await searchAcrossTables(db, {
+            query: q,
+            offset: query.offset,
+            limit: query.limit,
+            candidates,
+            primaryKeyOf: (schema, table) =>
+              pks.find(p => p.schema === schema && p.table === table)?.columns ?? [],
+          });
+          return page;
+        },
+        {
+          query: t.Object({
+            q: t.String({ minLength: 1 }),
+            offset: t.Optional(t.Number({ minimum: 0 })),
+            limit: t.Optional(t.Number({ minimum: 1, maximum: 100 })),
+          }),
+          response: {
+            200: t.Object({
+              results: t.Array(
+                t.Object({
+                  schema: t.String(),
+                  table: t.String(),
+                  pkColumns: t.Array(t.String()),
+                  pkValues: t.Array(CellSchema),
+                  matchedColumn: t.String(),
+                  snippet: t.String(),
+                }),
+              ),
+              total: t.Integer(),
+              nextOffset: t.Nullable(t.Integer()),
+            }),
+            400: ApiErrorSchema,
+          },
+        },
       )
       .get(
         "/api/schemas/:schema/tables/:table",
