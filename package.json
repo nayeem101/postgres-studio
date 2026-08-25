@@ -11,6 +11,7 @@
   "private": true,
   "scripts": {
     "dev": "bun run --filter @pg-studio/server --filter @pg-studio/web dev",
+    "studio": "bun apps/server/src/studio.ts",
     "dev:server": "bun run --filter @pg-studio/server dev",
     "dev:web": "bun run --filter @pg-studio/web dev",
     "test": "bun test tests/unit tests/integration",

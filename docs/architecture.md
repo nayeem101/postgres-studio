@@ -51,7 +51,9 @@ restorable.
 
 | File | Job |
 |---|---|
-| `index.ts` | Process entrypoint. Reads `PG_STUDIO_DB_URL ?? TEST_DATABASE_URL`, serves built SPA if `apps/web/dist` exists, listens on `PORT` (default 3000). Exports `type App`. |
+| `studio.ts` | One-command launcher (`bun run studio`): builds the SPA if `apps/web/dist` is missing, then hands off to `index.ts`. Flags are forwarded untouched. |
+| `index.ts` | Process entrypoint. Parses `--port/-p`, `--url` (or positional URL), `--no-open`; resolves the database from flags > `PG_STUDIO_DB_URL` > `TEST_DATABASE_URL`; serves built SPA if `apps/web/dist` exists; friendly `EADDRINUSE` error; **auto-opens the browser** when serving the UI (skipped by `--no-open`, `CI`, or `PG_STUDIO_NO_OPEN=1`). Exports `type App`. |
+| `open.ts` | Cross-platform browser opener (`open` / `cmd /c start` / `xdg-open`) with an injectable spawn for unit tests; failures never crash the server. |
 | `server-app.ts` | **The heart**: `createServerApp(config)` wires every route + TypeBox schema, plus the save flow and connection switching. Also exports `connectionIdFromUrl`, `redactUrl`, shared schemas (`SaveBodySchema`, …), and `ConnectionError`. |
 | `backup/index.ts` | `BackupStore` — bun:sqlite undo log. Two tables: `batches` (pending→confirmed→failed state machine, `restored_at`) and `snapshots` (per-row before/after images keyed by pk tuple). Additive migrations via `pragma table_info`. Also prune/clear for retention. |
 | `restore.ts` | `restoreBatch()` — validates a confirmed batch, checks for schema drift, then replays undo ops inside ONE Postgres transaction (see §4.4). Throws `RestoreError` for user-facing 409s. |

@@ -38,6 +38,19 @@ and only ever issues parameterized SQL against identifiers it has validated.
 
 ## Quick start
 
+The prisma-studio experience — one command, UI in your browser:
+
+```bash
+bun run studio -- postgres://user:pass@localhost:5432/mydb
+```
+
+Builds the SPA on first run, serves UI + API on <http://localhost:3000>, and
+opens your browser. Flags: `--port N`, `--no-open`, `--url <conn-string>` (or
+pass the URL positionally; `PG_STUDIO_DB_URL` / `TEST_DATABASE_URL` env vars
+also work). Re-open later without rebuilding: subsequent runs are instant.
+
+### Step-by-step alternative
+
 ```bash
 bun install
 
@@ -83,8 +96,9 @@ under `~/.pg-studio/backups/<connection-id>.sqlite`.
 
 | Command | What it does |
 |---|---|
+| `bun run studio` | **One command**: build-if-needed → serve UI+API on :3000 → open browser |
 | `bun install` | Install workspace dependencies |
-| `bun run dev` | Backend (:3000) + Vite dev server (:5173) |
+| `bun run dev` | Backend (:3000) + Vite dev server (:5173) with HMR |
 | `bun run dev:server` / `dev:web` | Either half alone |
 | `bun run seed:test-db` | Drop/recreate + seed `$TEST_DATABASE_URL` |
 | `bun run test` | Unit + integration suites (needs Postgres running) |
