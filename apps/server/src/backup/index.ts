@@ -259,6 +259,70 @@ export class BackupStore {
       .run({ $at: new Date().toISOString(), $id: batchId });
   }
 
+  /**
+   * Retention (Phase 3): drop batches older than `maxAgeDays` and/or keep
+   * only the newest `maxBatches` per connection scope.
+   */
+  prune(options: { maxAgeDays?: number; maxBatches?: number; connectionId?: string } = {}): number {
+    let removed = 0;
+
+    if (options.maxAgeDays !== undefined) {
+      if (!(options.maxAgeDays > 0)) throw new BackupStoreError("maxAgeDays must be positive");
+      const cutoff = new Date(Date.now() - options.maxAgeDays * 86_400_000).toISOString();
+      const stale = (
+        options.connectionId
+          ? this.database
+              .query("select id from batches where created_at < $cutoff and connection_id = $cid")
+              .all({ $cutoff: cutoff, $cid: options.connectionId })
+          : this.database.query("select id from batches where created_at < $cutoff").all({ $cutoff: cutoff })
+      ) as Array<{ id: string }>;
+      removed += this.deleteBatches(stale.map(r => r.id));
+    }
+
+    if (options.maxBatches !== undefined) {
+      if (!(options.maxBatches >= 0)) throw new BackupStoreError("maxBatches must be >= 0");
+      const keepSql = options.connectionId
+        ? "select id from batches where connection_id = $cid order by created_at desc limit $keep"
+        : "select id from batches order by created_at desc limit $keep";
+      const keepers = this.database.query(keepSql).all({
+        ...(options.connectionId ? { $cid: options.connectionId } : {}),
+        $keep: options.maxBatches,
+      }) as Array<{ id: string }>;
+      const keeperSet = new Set(keepers.map(r => r.id));
+      const all = (
+        options.connectionId
+          ? this.database.query("select id from batches where connection_id = $cid").all({ $cid: options.connectionId })
+          : this.database.query("select id from batches").all()
+      ) as Array<{ id: string }>;
+      removed += this.deleteBatches(all.filter(r => !keeperSet.has(r.id)).map(r => r.id));
+    }
+    return removed;
+  }
+
+  /** Manual clear: wipe every batch for a connection (or all). */
+  clearAll(connectionId?: string): number {
+    const rows = (
+      connectionId
+        ? this.database.query("select id from batches where connection_id = $cid").all({ $cid: connectionId })
+        : this.database.query("select id from batches").all()
+    ) as Array<{ id: string }>;
+    return this.deleteBatches(rows.map(r => r.id));
+  }
+
+  private deleteBatches(ids: readonly string[]): number {
+    if (ids.length === 0) return 0;
+    const removeSnapshots = this.database.query("delete from snapshots where batch_id = $id");
+    const removeBatch = this.database.query("delete from batches where id = $id");
+    const wipe = this.database.transaction((batchIds: readonly string[]) => {
+      for (const id of batchIds) {
+        removeSnapshots.run({ $id: id });
+        removeBatch.run({ $id: id });
+      }
+    });
+    wipe(ids);
+    return ids.length;
+  }
+
   getSnapshots(batchId: string): Array<SnapshotInput & { id: number }> {
     const rows = this.database
       .query(

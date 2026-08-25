@@ -143,3 +143,75 @@ describe("snapshot capture rules", () => {
     expect(snapshots[2]?.operation).toBe("insert");
   });
 });
+
+describe("retention and pruning", () => {
+  let store: BackupStore;
+  let close: () => void;
+
+  beforeEach(() => {
+    const database = new Database(":memory:");
+    store = new BackupStore(database);
+    store.init();
+    close = () => database.close();
+  });
+
+  afterEach(() => close());
+
+  const seedBatch = (createdAt: string, connectionId = "conn-1") => {
+    const id = store.beginBatch(connectionId, `batch@${createdAt}`);
+    store.addSnapshots(id, [updateSnapshot({})]);
+    return id;
+  };
+
+  test("prune by age removes only stale batches", () => {
+    const oldId = seedBatch("2020-01-01T00:00:00.000Z");
+    const freshId = seedBatch(new Date().toISOString());
+    backdate(store, oldId, "2020-01-01T00:00:00.000Z");
+
+    expect(store.prune({ maxAgeDays: 30 })).toBe(1);
+    expect(store.getBatch(oldId)).toBeNull();
+    expect(store.getBatch(freshId)).not.toBeNull();
+  });
+
+  test("prune by count keeps the newest N and drops the rest with snapshots", () => {
+    const ids = ["a", "b", "c"].map((_, i) => {
+      const id = seedBatch(`2026-01-0${i + 1}T00:00:00.000Z`);
+      backdate(store, id, `2026-01-0${i + 1}T00:00:00.000Z`);
+      return id;
+    });
+
+    expect(store.prune({ maxBatches: 2 })).toBe(1);
+    expect(store.getBatch(ids[0])).toBeNull();
+    expect(store.getBatch(ids[1])).not.toBeNull();
+    expect(store.getSnapshots(ids[1]!)).toHaveLength(1);
+    expect(store.getBatch(ids[2])).not.toBeNull();
+  });
+
+  test("clearAll wipes every batch; History is empty afterwards", () => {
+    const first = seedBatch("2026-01-01T00:00:00.000Z");
+    seedBatch("2026-02-01T00:00:00.000Z");
+    store.confirmBatch(first);
+    expect(store.listRestorableBatches()).toHaveLength(1);
+
+    expect(store.clearAll()).toBe(2);
+    expect(store.listRestorableBatches()).toHaveLength(0);
+  });
+
+  test("connection scoping keeps other connections untouched", () => {
+    const mine = seedBatch("2020-01-01T00:00:00.000Z", "conn-a");
+    const theirs = seedBatch("2020-01-01T00:00:00.000Z", "conn-b");
+    backdate(store, mine, "2020-01-01T00:00:00.000Z");
+
+    expect(store.prune({ maxAgeDays: 30, connectionId: "conn-a" })).toBe(1);
+    expect(store.getBatch(mine)).toBeNull();
+    expect(store.getBatch(theirs)).not.toBeNull();
+  });
+});
+
+/** Backdate a batch row so age-based rules can be tested deterministically. */
+function backdate(store: BackupStore, batchId: string, createdAt: string): void {
+  const dbAccess = (
+    store as unknown as { database: { query(sql: string): { run(params: Record<string, string>): void } } }
+  ).database;
+  dbAccess.query("update batches set created_at = $at where id = $id").run({ $at: createdAt, $id: batchId });
+}
