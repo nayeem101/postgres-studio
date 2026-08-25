@@ -24,6 +24,8 @@ export interface DataGridProps {
   onRowSelect?: (row: Row) => void;
   /** Fires when the user opens the FK drawer for a row. */
   onOpenReferences?: (row: Row, pkValues: CellValue[]) => void;
+  /** Opens the connection-wide history panel. */
+  onOpenHistory?: () => void;
 }
 
 interface StagedUpdate {
@@ -41,7 +43,15 @@ function cellText(value: CellValue): string {
  * rows regardless of how many pages were fetched. Edits/deletes are STAGED
  * locally and only sent by the explicit Save action (pending-changes model).
  */
-export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect, onOpenReferences }: DataGridProps) {
+export function DataGrid({
+  schema,
+  table,
+  client,
+  pageSize = 50,
+  onRowSelect,
+  onOpenReferences,
+  onOpenHistory,
+}: DataGridProps) {
   const queryClient = useQueryClient();
   const [sort, setSort] = useState<SortState | null>(null);
   const [search, setSearch] = useState("");
@@ -54,6 +64,8 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect, on
   const [editing, setEditing] = useState<{ key: string; column: string; draft: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteImpact, setDeleteImpact] = useState<Array<{ childTable: string; total: number }> | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
 
   const detailQuery = useQuery({
@@ -177,6 +189,30 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect, on
   }
 
   async function onSave() {
+    // Phase 3: deleting rows that other rows reference must be confirmed
+    // with exact FK impact counts before anything is sent.
+    if (stagedDeletes.size > 0 && !confirmOpen) {
+      setConfirmOpen(true);
+      const impact = new Map<string, number>();
+      for (const pkValues of stagedDeletes.values()) {
+        try {
+          const res = await client.incomingReferences(schema, table, pkValues);
+          for (const group of res.groups) {
+            if (group.totalCount > 0) {
+              impact.set(group.childTable, (impact.get(group.childTable) ?? 0) + group.totalCount);
+            }
+          }
+        } catch {
+          // Count lookup is advisory; the save itself remains guarded server-side.
+        }
+      }
+      setDeleteImpact([...impact.entries()].map(([childTable, total]) => ({ childTable, total })));
+      return;
+    }
+    await performSave();
+  }
+
+  async function performSave() {
     setSaving(true);
     setSaveError(null);
     try {
@@ -188,8 +224,10 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect, on
       setStagedUpdates(new Map());
       setStagedDeletes(new Map());
       setStagedInserts([]);
+      setDeleteImpact(null);
       await query.refetch();
     } catch (error) {
+      // Optimistic rollback: pending overlay stays; nothing is silently lost.
       setSaveError(`Save failed — pending changes kept. ${(error as Error).message}`);
     } finally {
       setSaving(false);
@@ -201,6 +239,8 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect, on
     setStagedDeletes(new Map());
     setStagedInserts([]);
     setSaveError(null);
+    setConfirmOpen(false);
+    setDeleteImpact(null);
   }
 
   if (query.isPending) {
@@ -259,6 +299,16 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect, on
             + Row
           </button>
         ) : null}
+        {onOpenHistory ? (
+          <button
+            type="button"
+            aria-label="Open history"
+            onClick={onOpenHistory}
+            className="rounded border border-border px-2 py-1 text-xs hover:bg-muted"
+          >
+            History
+          </button>
+        ) : null}
       </div>
 
       {pendingCount > 0 || saveError ? (
@@ -283,6 +333,55 @@ export function DataGrid({ schema, table, client, pageSize = 50, onRowSelect, on
               {saveError}
             </span>
           ) : null}
+        </div>
+      ) : null}
+
+      {confirmOpen ? (
+        <div
+          role="alertdialog"
+          aria-label="Confirm delete"
+          className="border-b border-border bg-muted px-3 py-2 text-sm"
+        >
+          <p className="font-medium">
+            Delete {stagedDeletes.size} row(s) from {schema}.{table}?
+          </p>
+          {deleteImpact && deleteImpact.length > 0 ? (
+            <ul className="mt-1 text-xs text-muted-foreground">
+              {deleteImpact.map(entry => (
+                <li key={entry.childTable}>
+                  {entry.total} row(s) in <span className="font-semibold">{entry.childTable}</span> reference the
+                  selection
+                </li>
+              ))}
+            </ul>
+          ) : deleteImpact ? (
+            <p className="mt-1 text-xs text-muted-foreground">No loaded rows reference the selection.</p>
+          ) : (
+            <p role="status" className="mt-1 text-xs text-muted-foreground">
+              Counting referencing rows…
+            </p>
+          )}
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              aria-label="Confirm deletes and save"
+              disabled={saving || deleteImpact === null}
+              onClick={() => {
+                setConfirmOpen(false);
+                void performSave();
+              }}
+              className="rounded bg-primary px-3 py-0.5 text-primary-foreground disabled:opacity-50"
+            >
+              Confirm &amp; save
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(false)}
+              className="rounded border border-border px-3 py-0.5"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       ) : null}
 

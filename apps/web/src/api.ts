@@ -90,6 +90,39 @@ export interface StudioClient {
     limit?: number,
   ): Promise<{ groups: IncomingGroup[] }>;
   getInferredRelations(schema: string, table: string): Promise<InferredRelation[]>;
+  listHistory(): Promise<HistoryBatch[]>;
+  getBatchSnapshots(batchId: string): Promise<BatchSnapshots>;
+  restoreBatch(batchId: string): Promise<RestoreResult>;
+}
+
+export interface HistoryBatch {
+  id: string;
+  createdAt: string;
+  description: string | null;
+}
+
+export type CellRecord = Record<string, CellValue>;
+
+export interface SnapshotView {
+  id: number;
+  schema: string;
+  table: string;
+  pkValues: CellValue[];
+  operation: "insert" | "update" | "delete";
+  beforeImage: CellRecord | null;
+  afterImage: CellRecord | null;
+}
+
+export interface BatchSnapshots {
+  batch: HistoryBatch & { status: string };
+  snapshots: SnapshotView[];
+}
+
+export interface RestoreResult {
+  batchId: string;
+  restoredDeletes: number;
+  restoredInserts: number;
+  restoredUpdates: number;
 }
 
 export interface InferredRelation {
@@ -154,5 +187,31 @@ export const studioClient: StudioClient = {
     const res = await api.api.schemas({ schema }).tables({ table }).inferred.get();
     if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
     return res.data.inferred;
+  },
+  async listHistory() {
+    const res = await api.api.history.batches.get();
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return res.data.batches.map(b => ({ id: b.id, createdAt: b.createdAt, description: b.description }));
+  },
+  async getBatchSnapshots(batchId) {
+    const res = await api.api.history.batches({ batchId }).snapshots.get();
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return {
+      batch: { ...res.data.batch, status: res.data.batch.status },
+      snapshots: res.data.snapshots.map(s => ({
+        id: s.id,
+        schema: s.schema,
+        table: s.table,
+        pkValues: s.pkValues,
+        operation: s.operation as SnapshotView["operation"],
+        beforeImage: s.beforeImage,
+        afterImage: s.afterImage,
+      })),
+    };
+  },
+  async restoreBatch(batchId) {
+    const res = await api.api.history.batches({ batchId }).restore.post();
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return res.data;
   },
 };

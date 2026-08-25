@@ -132,8 +132,10 @@ export class BackupStore {
   /**
    * Atomically attach before-images to a pending batch. Any invalid record
    * aborts the whole insert so a half-captured batch can never exist.
+   * Returns the inserted snapshot ids so callers can enrich records later
+   * (e.g. attaching update after-images) while the batch is still pending.
    */
-  addSnapshots(batchId: string, records: readonly SnapshotInput[]): void {
+  addSnapshots(batchId: string, records: readonly SnapshotInput[]): number[] {
     const batch = this.getBatch(batchId);
     if (!batch) throw new BackupStoreError(`batch ${batchId} not found`);
     if (batch.status !== "pending") {
@@ -151,10 +153,11 @@ export class BackupStore {
        values ($batch, $schema, $table, $pk, $op, $img, $afterImg, $at)`,
     );
 
+    const ids: number[] = [];
     const writeAll = this.database.transaction((rows: readonly SnapshotInput[]) => {
       const at = new Date().toISOString();
       for (const r of rows) {
-        insert.run({
+        const result = insert.run({
           $batch: batchId,
           $schema: r.schema,
           $table: r.table,
@@ -164,9 +167,22 @@ export class BackupStore {
           $afterImg: r.afterImage == null ? null : JSON.stringify(r.afterImage),
           $at: at,
         });
+        ids.push(Number(result.lastInsertRowid));
       }
     });
     writeAll(records);
+    return ids;
+  }
+
+  /** Fill in an update snapshot's after-image; only allowed pre-confirmation. */
+  attachAfterImage(batchId: string, snapshotId: number, image: Record<string, unknown>): void {
+    const batch = this.getBatch(batchId);
+    if (!batch || batch.status !== "pending") {
+      throw new BackupStoreError("after-images can only be attached to pending batches");
+    }
+    this.database
+      .query("update snapshots set after_image = $img where id = $id and batch_id = $batch")
+      .run({ $img: JSON.stringify(image), $id: snapshotId, $batch: batchId });
   }
 
   /** Mark a pending batch as committed to Postgres (becomes restorable). */

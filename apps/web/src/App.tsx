@@ -3,6 +3,7 @@ import { Sidebar } from "./components/Sidebar";
 import { DataGrid } from "./components/DataGrid";
 import { DetailPanel } from "./components/DetailPanel";
 import { FKDrawer, type DrawerTarget } from "./components/FKDrawer";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { studioClient, type Row, type StudioClient } from "./api";
 
 /** Hard cap so click-through can never recurse unbounded (Phase 2 guard). */
@@ -12,6 +13,7 @@ export function App({ client = studioClient }: { client?: StudioClient }) {
   const [selected, setSelected] = useState<{ schema: string; name: string } | null>(null);
   const [detailRow, setDetailRow] = useState<Row | null>(null);
   const [drawerStack, setDrawerStack] = useState<DrawerTarget[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   function selectTable(selection: { schema: string; name: string }) {
     setSelected(selection);
@@ -50,10 +52,18 @@ export function App({ client = studioClient }: { client?: StudioClient }) {
               onRowSelect={setDetailRow}
               onOpenReferences={(row, pkValues) => {
                 if (!selected) return;
+                setShowHistory(false);
                 navigateTo({ schema: selected.schema, table: selected.name, pkValues });
               }}
+              onOpenHistory={() => {
+                setDrawerStack([]);
+                setDetailRow(null);
+                setShowHistory(true);
+              }}
             />
-            {drawerStack.length > 0 ? (
+            {showHistory ? (
+              <HistoryPanel client={client} onClose={() => setShowHistory(false)} />
+            ) : drawerStack.length > 0 ? (
               <FKDrawer
                 target={drawerStack[drawerStack.length - 1]}
                 client={client}

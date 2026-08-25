@@ -7,8 +7,9 @@ import { DataGrid } from "./DataGrid";
 import { DetailPanel } from "./DetailPanel";
 import { AddRowForm } from "./AddRowForm";
 import { FKDrawer, type DrawerTarget } from "./FKDrawer";
+import { HistoryPanel } from "./HistoryPanel";
 import { App } from "../App";
-import type { Row, RowsQuery, StudioClient, TableMeta } from "../api";
+import type { BatchSnapshots, CellValue, Row, RowsQuery, StudioClient, TableMeta } from "../api";
 
 function renderWithQuery(ui: ReactElement): void {
   const queryClient = new QueryClient({
@@ -65,6 +66,12 @@ function makeRowClient(totalRows: number, pageSize = 50) {
     outgoingReferences: async () => ({ outgoing: [] }),
     incomingReferences: async () => ({ groups: [] }),
     getInferredRelations: async () => [],
+    listHistory: async () => [],
+    getBatchSnapshots: async () => ({
+      batch: { id: "b", createdAt: "", description: null, status: "confirmed" },
+      snapshots: [],
+    }),
+    restoreBatch: async () => ({ batchId: "b", restoredDeletes: 0, restoredInserts: 0, restoredUpdates: 0 }),
   };
   return { client, calls, savedPayloads, setSaveShouldFail: (v: boolean) => (saveShouldFail = v) };
 }
@@ -79,6 +86,12 @@ function stubClient(overrides: Partial<StudioClient> = {}): StudioClient {
     outgoingReferences: async () => ({ outgoing: [] }),
     incomingReferences: async () => ({ groups: [] }),
     getInferredRelations: async () => [],
+    listHistory: async () => [],
+    getBatchSnapshots: async () => ({
+      batch: { id: "b", createdAt: "", description: null, status: "confirmed" },
+      snapshots: [],
+    }),
+    restoreBatch: async () => ({ batchId: "b", restoredDeletes: 0, restoredInserts: 0, restoredUpdates: 0 }),
     ...overrides,
   };
 }
@@ -272,6 +285,10 @@ describe("Pending changes (staged edits, deletes, inserts)", () => {
     expect(screen.getByText(/1 delete\(s\)/)).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    // Phase 3: deletes route through the FK-impact confirmation first.
+    await screen.findByRole("alertdialog", { name: "Confirm delete" });
+    const confirm = await screen.findByRole("button", { name: "Confirm deletes and save" });
+    fireEvent.click(confirm);
     await waitFor(() => expect(savedPayloads).toHaveLength(1));
     expect(savedPayloads[0]?.deletes).toEqual([{ pkValues: [1] }]);
   });
@@ -573,6 +590,139 @@ describe("FK navigation guard (App)", () => {
     fireEvent.click(await screen.findByText("Ada"));
     fireEvent.click(screen.getByRole("button", { name: "Close drawer" }));
     expect(screen.queryByRole("complementary", { name: "fk drawer" })).toBeNull();
+  });
+});
+
+describe("Delete confirmation with FK impact counts", () => {
+  function impactClient(log: { saved: boolean }) {
+    const harness = makeRowClient(2);
+    return {
+      client: {
+        ...harness.client,
+        incomingReferences: async (_schema: string, _table: string, pkValues: CellValue[]) => ({
+          groups:
+            Number(pkValues[0]) === 1
+              ? [
+                  {
+                    constraintName: "fk_addresses",
+                    childSchema: "public",
+                    childTable: "addresses",
+                    childColumns: ["customer_id"],
+                    totalCount: 3,
+                    rows: [],
+                    nextOffset: null,
+                  },
+                ]
+              : [],
+        }),
+        saveRows: async (...args: Parameters<StudioClient["saveRows"]>) => {
+          log.saved = true;
+          return harness.client.saveRows(...args);
+        },
+      } as StudioClient,
+    };
+  }
+
+  test("saving a delete first shows per-table impact counts, commit only on confirm", async () => {
+    const log = { saved: false };
+    const { client } = impactClient(log);
+    renderWithQuery(
+      <DataGrid schema="public" table="customers" client={client} onOpenHistory={() => {}} />,
+    );
+
+    fireEvent.click(await screen.findByLabelText(/^Delete 1$/)); // stage row pk=1
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Confirm delete" });
+    expect(dialog).toBeDefined();
+    expect(await screen.findByText(/3 row\(s\) in/)).toBeDefined();
+    expect(screen.getByText("addresses", { selector: "span" })).toBeDefined();
+    expect(log.saved).toBe(false); // nothing sent yet
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm deletes and save" }));
+    await waitFor(() => expect(log.saved).toBe(true));
+  });
+
+  test("cancel closes the dialog without saving", async () => {
+    const log = { saved: false };
+    const { client } = impactClient(log);
+    renderWithQuery(
+      <DataGrid schema="public" table="customers" client={client} onOpenHistory={() => {}} />,
+    );
+
+    fireEvent.click(await screen.findByLabelText(/^Delete 1$/));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("alertdialog", { name: "Confirm delete" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(log.saved).toBe(false);
+  });
+});
+
+describe("HistoryPanel", () => {
+  function historyClient() {
+    const base = stubClient();
+    return {
+      client: {
+        ...base,
+        listHistory: async () => [
+          { id: "batch-1", createdAt: new Date(2026, 7, 25, 10, 0).toISOString(), description: "public.orders" },
+        ],
+        getBatchSnapshots: async (batchId: string): Promise<BatchSnapshots> => {
+          expect(batchId).toBe("batch-1");
+          return {
+            batch: { id: "batch-1", createdAt: "", description: "public.orders", status: "confirmed" },
+            snapshots: [
+              {
+                id: 1,
+                schema: "public",
+                table: "orders",
+                pkValues: [1, 100],
+                operation: "update" as const,
+                beforeImage: { total: 150 },
+                afterImage: { total: 999 },
+              },
+              {
+                id: 2,
+                schema: "public",
+                table: "addresses",
+                pkValues: [1],
+                operation: "delete" as const,
+                beforeImage: { id: 1, line: "12 Analytical St" },
+                afterImage: null,
+              },
+            ],
+          };
+        },
+      },
+    };
+  }
+
+  test("lists batches, shows snapshot diffs, and restores from the panel", async () => {
+    let restoredId: string | null = null;
+    const base = historyClient();
+    const client: StudioClient = {
+      ...base.client,
+      restoreBatch: async batchId => {
+        restoredId = batchId;
+        return { batchId, restoredDeletes: 1, restoredInserts: 0, restoredUpdates: 1 };
+      },
+    };
+
+    renderWithQuery(<HistoryPanel client={client} onClose={() => {}} />);
+
+    fireEvent.click(await screen.findByText("public.orders"));
+    expect(await screen.findByText(/DELETE/i)).toBeDefined();
+    expect(screen.getByText(/total: 150 → 999/)).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /Restore batch/ }));
+    await waitFor(() => expect(restoredId).toBe("batch-1"));
+    expect(await screen.findByRole("status")).toBeDefined();
+  });
+
+  test("empty history renders an empty-state message", async () => {
+    renderWithQuery(<HistoryPanel client={stubClient()} onClose={() => {}} />);
+    expect(await screen.findByText("No restorable changes yet.")).toBeDefined();
   });
 });
 

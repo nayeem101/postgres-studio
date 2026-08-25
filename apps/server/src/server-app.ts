@@ -408,6 +408,7 @@ export function createServerApp(config: ServerAppConfig) {
           const beforeByKey = new Map(beforeRows.map(row => [tupleKey(pkColumns.map(c => row[c])), row]));
 
           const snapshots: SnapshotInput[] = [];
+          const updateSnapshotIds: number[] = [];
           const appliedUpdates: SaveBody["updates"] = [];
           const appliedDeletes: SaveBody["deletes"] = [];
           let skipped = 0;
@@ -474,8 +475,16 @@ export function createServerApp(config: ServerAppConfig) {
             connectionId,
             `${params.schema}.${params.table}`,
           );
+          // Update snapshots are tracked so post-mutation after-images can be
+          // attached (while still pending) for the History diff view.
+          const updateSnapshots = snapshots.filter(s => s.operation === "update");
           try {
-            if (snapshots.length > 0) backupStore.addSnapshots(batchId, snapshots);
+            if (updateSnapshots.length > 0) {
+              const updateIds = backupStore.addSnapshots(batchId, updateSnapshots);
+              updateSnapshotIds.push(...updateIds);
+            }
+            const restSnapshots = snapshots.filter(s => s.operation !== "update");
+            if (restSnapshots.length > 0) backupStore.addSnapshots(batchId, restSnapshots);
 
             const insertedRows: Array<Record<string, unknown>> = [];
             await db.begin(async tx => {
@@ -511,8 +520,8 @@ export function createServerApp(config: ServerAppConfig) {
               }
             });
 
-            // Batch is still pending here, so post-mutation insert captures
-            // stay within the two-phase discipline.
+            // Batch is still pending here, so post-mutation captures stay
+            // within the two-phase discipline.
             if (insertedRows.length > 0 && pkColumns.length > 0) {
               backupStore.addSnapshots(
                 batchId,
@@ -525,6 +534,29 @@ export function createServerApp(config: ServerAppConfig) {
                   afterImage: row,
                 })),
               );
+            }
+            // Attach update after-images so History can render before → after.
+            if (updateSnapshotIds.length > 0) {
+              const afterSelect = compileSelectByPkTuples({
+                schema: params.schema,
+                table: params.table,
+                pkColumns,
+                tuples: appliedUpdates.map(u => u.pkValues),
+              });
+              const afterRows = await db.unsafe(afterSelect.text, afterSelect.params);
+              const afterByKey = new Map(
+                (afterRows as Array<Record<string, unknown>>).map(row => [
+                  tupleKey(pkColumns.map(c => row[c])),
+                  row,
+                ]),
+              );
+              appliedUpdates.forEach((update, index) => {
+                const after = afterByKey.get(tupleKey(update.pkValues));
+                const snapshotId = updateSnapshotIds[index];
+                if (after && snapshotId !== undefined) {
+                  backupStore.attachAfterImage(batchId, snapshotId, after);
+                }
+              });
             }
 
             backupStore.confirmBatch(batchId);
