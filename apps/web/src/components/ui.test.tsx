@@ -72,6 +72,7 @@ function makeRowClient(totalRows: number, pageSize = 50) {
       snapshots: [],
     }),
     restoreBatch: async () => ({ batchId: "b", restoredDeletes: 0, restoredInserts: 0, restoredUpdates: 0 }),
+    globalSearch: async () => ({ results: [], total: 0, nextOffset: null }),
   };
   return { client, calls, savedPayloads, setSaveShouldFail: (v: boolean) => (saveShouldFail = v) };
 }
@@ -92,6 +93,7 @@ function stubClient(overrides: Partial<StudioClient> = {}): StudioClient {
       snapshots: [],
     }),
     restoreBatch: async () => ({ batchId: "b", restoredDeletes: 0, restoredInserts: 0, restoredUpdates: 0 }),
+    globalSearch: async () => ({ results: [], total: 0, nextOffset: null }),
     ...overrides,
   };
 }
