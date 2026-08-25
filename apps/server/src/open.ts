@@ -8,7 +8,13 @@ export type SpawnFn = (command: string[]) => unknown;
 /** The command that opens a URL on the given platform. */
 export function commandFor(platform: string): string[] {
   if (platform === "darwin") return ["open"];
-  if (platform === "win32") return ["cmd", "/c", "start", ""];
+  if (platform === "win32") {
+    // NOT `cmd /c start ""`: cmd's title-argument parsing is fragile when the
+    // args are re-quoted by a runtime, and a mangled line can resolve to an
+    // arbitrary registered handler. explorer.exe delegates straight to the
+    // default http handler with no parsing games.
+    return ["explorer.exe"];
+  }
   return ["xdg-open"];
 }
 

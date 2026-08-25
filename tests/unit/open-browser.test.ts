@@ -4,7 +4,9 @@ import { commandFor, openBrowser } from "../../apps/server/src/open";
 describe("commandFor", () => {
   test("platform-specific open commands", () => {
     expect(commandFor("darwin")).toEqual(["open"]);
-    expect(commandFor("win32")).toEqual(["cmd", "/c", "start", ""]);
+    // explorer.exe instead of `cmd /c start ""`: cmd's title parsing is
+    // fragile and mis-resolved to the wrong application on real machines.
+    expect(commandFor("win32")).toEqual(["explorer.exe"]);
     expect(commandFor("linux")).toEqual(["xdg-open"]);
   });
 });
