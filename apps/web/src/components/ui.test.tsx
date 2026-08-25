@@ -73,6 +73,11 @@ function makeRowClient(totalRows: number, pageSize = 50) {
     }),
     restoreBatch: async () => ({ batchId: "b", restoredDeletes: 0, restoredInserts: 0, restoredUpdates: 0 }),
     globalSearch: async () => ({ results: [], total: 0, nextOffset: null }),
+    listConnections: async () => ({ current: { id: "c", url: "postgres://***@local/db" }, recents: [] }),
+    switchConnection: async () => ({
+      current: { id: "c", url: "postgres://***@local/db" },
+      recents: [],
+    }),
   };
   return { client, calls, savedPayloads, setSaveShouldFail: (v: boolean) => (saveShouldFail = v) };
 }
@@ -94,6 +99,11 @@ function stubClient(overrides: Partial<StudioClient> = {}): StudioClient {
     }),
     restoreBatch: async () => ({ batchId: "b", restoredDeletes: 0, restoredInserts: 0, restoredUpdates: 0 }),
     globalSearch: async () => ({ results: [], total: 0, nextOffset: null }),
+    listConnections: async () => ({ current: { id: "c", url: "postgres://***@local/db" }, recents: [] }),
+    switchConnection: async () => ({
+      current: { id: "c", url: "postgres://***@local/db" },
+      recents: [],
+    }),
     ...overrides,
   };
 }
@@ -557,7 +567,7 @@ describe("FK navigation guard (App)", () => {
     renderWithQuery(<App client={navClient()} />);
 
     // select the table, then open the drawer at t(1)
-    fireEvent.click(await screen.findByRole("button", { name: /t/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "t" }));
     fireEvent.click(await screen.findByLabelText(/^References \[/));
     expect(await screen.findByText("(1)")).toBeDefined();
 
@@ -587,7 +597,7 @@ describe("FK navigation guard (App)", () => {
 
   test("closing the drawer clears history", async () => {
     renderWithQuery(<App client={navClient()} />);
-    fireEvent.click(await screen.findByRole("button", { name: /t/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "t" }));
     fireEvent.click(await screen.findByLabelText(/^References \[/));
     fireEvent.click(await screen.findByText("Ada"));
     fireEvent.click(screen.getByRole("button", { name: "Close drawer" }));

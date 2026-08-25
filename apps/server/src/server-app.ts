@@ -1,6 +1,7 @@
 import { SQL } from "bun";
 import { createHash } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { homedir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { Elysia, status, t } from "elysia";
@@ -25,7 +26,14 @@ import {
   searchAcrossTables,
 } from "@pg-studio/db";
 import { restoreBatch, RestoreError } from "./restore";
-import { BackupStore, type SnapshotInput } from "./backup";
+import { BackupStore, BackupStoreError, type SnapshotInput } from "./backup";
+
+export class ConnectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConnectionError";
+  }
+}
 
 /**
  * The real studio API. Built per connection URL so tests can construct an
@@ -153,6 +161,10 @@ export interface ServerAppConfig {
   staticDir?: string;
   /** Override for tests; defaults to a per-connection file under ~/.pg-studio. */
   backupStore?: BackupStore;
+  /** Override for tests; where per-connection sqlite files live. */
+  backupDir?: string;
+  /** Override for tests; recent-connections JSON file. */
+  recentsFile?: string;
 }
 
 /** Stable per-connection identifier derived from the URL (never contains secrets). */
@@ -207,17 +219,116 @@ function attachStatic(
 }
 
 export function createServerApp(config: ServerAppConfig) {
-  const db = new SQL(config.databaseUrl);
+  let db = new SQL(config.databaseUrl);
 
-  const connectionId = connectionIdFromUrl(config.databaseUrl);
-  const backupStore =
-    config.backupStore ??
-    BackupStore.open(join(homedir(), ".pg-studio", "backups", `${connectionId}.sqlite`));
+  const backupDir = config.backupDir ?? join(homedir(), ".pg-studio", "backups");
+  const recentsFile = config.recentsFile ?? join(homedir(), ".pg-studio", "recent.json");
+  let connectionId = connectionIdFromUrl(config.databaseUrl);
+  let currentUrl = config.databaseUrl;
+  let backupStore =
+    config.backupStore ?? BackupStore.open(join(backupDir, `${connectionId}.sqlite`));
   backupStore.init();
+  pushRecent(config.databaseUrl);
+
+  function readRecents(): string[] {
+    try {
+      const parsed = JSON.parse(readFileSync(recentsFile, "utf8")) as { urls?: unknown };
+      return Array.isArray(parsed.urls) ? parsed.urls.filter((u): u is string => typeof u === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function pushRecent(url: string): void {
+    const urls = [url, ...readRecents().filter(candidate => candidate !== url)].slice(0, 10);
+    mkdirSync(dirname(recentsFile), { recursive: true });
+    writeFileSync(recentsFile, JSON.stringify({ urls }, null, 2));
+  }
+
+  /** Swap the live database + rollback store; backup files stay per-connection. */
+  async function switchConnection(url: string): Promise<void> {
+    if (!/^postgres(ql)?:\/\//.test(url)) {
+      throw new ConnectionError("url must start with postgres:// or postgresql://");
+    }
+    const nextId = connectionIdFromUrl(url);
+    if (nextId === connectionId) return;
+
+    const oldDb = db;
+    const oldStore = backupStore;
+    db = new SQL(url);
+    connectionId = nextId;
+    currentUrl = url;
+    backupStore = BackupStore.open(join(backupDir, `${connectionId}.sqlite`));
+    backupStore.init();
+    pushRecent(url);
+
+    oldStore.close();
+    await oldDb.close();
+  }
 
   const app = (
     new Elysia({ name: "pg-studio-server" })
       .get("/health", () => ({ ok: true }))
+      .get(
+        "/api/connections",
+        () => ({
+          current: { id: connectionId, url: redactUrl(currentUrl) },
+          recents: readRecents().map(url => ({
+            id: connectionIdFromUrl(url),
+            url: redactUrl(url),
+          })),
+        }),
+        {
+          response: t.Object({
+            current: t.Object({ id: t.String(), url: t.String() }),
+            recents: t.Array(t.Object({ id: t.String(), url: t.String() })),
+          }),
+        },
+      )
+      .post(
+        "/api/connections",
+        async ({ body }) => {
+          // Clients may connect by full URL or by a known connection id
+          // (resolved against this server's recents, never sent redacted).
+          let target = body.url;
+          if (!target && body.connectionId) {
+            target = readRecents().find(url => connectionIdFromUrl(url) === body.connectionId);
+            if (!target) {
+              return status(404, { error: "unknown connection id" });
+            }
+          }
+          if (!target) {
+            return status(400, { error: "provide url or connectionId" });
+          }
+          try {
+            await switchConnection(target);
+          } catch (error) {
+            if (error instanceof ConnectionError) {
+              return status(400, { error: error.message });
+            }
+            return status(500, { error: `switch failed: ${(error as Error).message}` });
+          }
+          return {
+            current: { id: connectionId, url: redactUrl(currentUrl) },
+            recents: readRecents().map(url => ({ id: connectionIdFromUrl(url), url: redactUrl(url) })),
+          };
+        },
+        {
+          body: t.Object({
+            url: t.Optional(t.String({ minLength: 12 })),
+            connectionId: t.Optional(t.String({ minLength: 8 })),
+          }),
+          response: {
+            200: t.Object({
+              current: t.Object({ id: t.String(), url: t.String() }),
+              recents: t.Array(t.Object({ id: t.String(), url: t.String() })),
+            }),
+            400: ApiErrorSchema,
+            404: ApiErrorSchema,
+            500: ApiErrorSchema,
+          },
+        },
+      )
       .get(
         "/api/tables",
         async () => ({ tables: await listTables(db) }),

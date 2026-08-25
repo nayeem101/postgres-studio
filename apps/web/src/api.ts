@@ -94,6 +94,17 @@ export interface StudioClient {
   getBatchSnapshots(batchId: string): Promise<BatchSnapshots>;
   restoreBatch(batchId: string): Promise<RestoreResult>;
   globalSearch(query: string, offset?: number, limit?: number): Promise<SearchPage>;
+  listConnections(): Promise<{ current: ConnectionInfo; recents: ConnectionInfo[] }>;
+  switchConnection(target: { url?: string; connectionId?: string }): Promise<{
+    current: ConnectionInfo;
+    recents: ConnectionInfo[];
+  }>;
+}
+
+export interface ConnectionInfo {
+  id: string;
+  /** Password-redacted connection string. */
+  url: string;
 }
 
 export interface SearchPage {
@@ -232,5 +243,15 @@ export const studioClient: StudioClient = {
     const res = await api.api.search.get({ query: { q: query, offset, limit } });
     if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
     return res.data;
+  },
+  async listConnections() {
+    const res = await api.api.connections.get();
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return { current: res.data.current, recents: res.data.recents };
+  },
+  async switchConnection(target) {
+    const res = await api.api.connections.post(target);
+    if (res.error || !res.data) throw new Error(res.error ? String(res.error.status) : "empty response");
+    return { current: res.data.current, recents: res.data.recents };
   },
 };
