@@ -60,3 +60,9 @@ export {
   type ResolveOptions,
 } from "./references";
 export { inferRelations, type InferredRelation } from "./inferred";
+export {
+  collectCascadingRows,
+  type CascadeCollection,
+  type CascadeOptions,
+  type CascadeRow,
+} from "./cascades";

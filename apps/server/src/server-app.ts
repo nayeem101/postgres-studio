@@ -9,6 +9,7 @@ import {
   compileInsert,
   compileSelectByPkTuples,
   compileUpdate,
+  collectCascadingRows,
   inferRelations,
   listColumns,
   listEnums,
@@ -22,6 +23,7 @@ import {
   resolveIncomingReferences,
   resolveOutgoingReferences,
 } from "@pg-studio/db";
+import { restoreBatch, RestoreError } from "./restore";
 import { BackupStore, type SnapshotInput } from "./backup";
 
 /**
@@ -137,6 +139,7 @@ export const SaveResultSchema = t.Object({
   batchId: t.String(),
   appliedUpdates: t.Integer(),
   appliedDeletes: t.Integer(),
+  cascadedDeletes: t.Integer(),
   appliedInserts: t.Integer(),
   skipped: t.Integer(),
 });
@@ -438,14 +441,32 @@ export function createServerApp(config: ServerAppConfig) {
               beforeImage: before,
             });
           }
-          for (const insert of body.inserts) {
-            snapshots.push({
-              schema: params.schema,
-              table: params.table,
-              pkValues: [],
-              operation: "insert",
-              beforeImage: null,
+          // Inserts are captured AFTER execution via RETURNING while the
+          // batch is still pending — the pending batch created below is the
+          // two-phase marker, so undo can target generated rows exactly.
+
+          // Cascade-aware capture: children that Postgres would silently
+          // delete or null out must be snapshotted BEFORE we touch the DB.
+          let cascadedDeletes = 0;
+          if (appliedDeletes.length > 0) {
+            const cascade = await collectCascadingRows(db, {
+              rootSchema: params.schema,
+              rootTable: params.table,
+              rootPkColumns: pkColumns,
+              rootTuples: appliedDeletes.map(d => d.pkValues),
             });
+            for (const row of cascade.rows) {
+              cascadedDeletes++;
+              snapshots.push({
+                schema: row.schema,
+                table: row.table,
+                pkValues: row.pkColumns.map(c => row.row[c] ?? null) as SnapshotInput["pkValues"],
+                // Cascaded children are undone by re-insert; nulled references
+                // by rewriting the full captured row.
+                operation: row.effect === "cascade" ? "delete" : "update",
+                beforeImage: row.row,
+              });
+            }
           }
 
           // Non-negotiable #3: pending snapshots exist BEFORE Postgres is touched.
@@ -456,6 +477,7 @@ export function createServerApp(config: ServerAppConfig) {
           try {
             if (snapshots.length > 0) backupStore.addSnapshots(batchId, snapshots);
 
+            const insertedRows: Array<Record<string, unknown>> = [];
             await db.begin(async tx => {
               for (const update of appliedUpdates) {
                 const pk = Object.fromEntries(pkColumns.map((c, i) => [c, update.pkValues[i]]));
@@ -482,15 +504,35 @@ export function createServerApp(config: ServerAppConfig) {
                   table: params.table,
                   values: insert.values,
                 });
-                await tx.unsafe(compiled.text, compiled.params);
+                // RETURNING lets us attach after-images so undo can target
+                // generated rows (identity sequences etc.).
+                const returned = await tx.unsafe(`${compiled.text} returning *`, compiled.params);
+                insertedRows.push(...(returned as Array<Record<string, unknown>>));
               }
             });
+
+            // Batch is still pending here, so post-mutation insert captures
+            // stay within the two-phase discipline.
+            if (insertedRows.length > 0 && pkColumns.length > 0) {
+              backupStore.addSnapshots(
+                batchId,
+                insertedRows.map(row => ({
+                  schema: params.schema,
+                  table: params.table,
+                  pkValues: pkColumns.map(c => row[c] ?? null) as SnapshotInput["pkValues"],
+                  operation: "insert" as const,
+                  beforeImage: null,
+                  afterImage: row,
+                })),
+              );
+            }
 
             backupStore.confirmBatch(batchId);
             return {
               batchId,
               appliedUpdates: appliedUpdates.length,
               appliedDeletes: appliedDeletes.length,
+              cascadedDeletes,
               appliedInserts: body.inserts.length,
               skipped,
             };
@@ -511,6 +553,121 @@ export function createServerApp(config: ServerAppConfig) {
             400: ApiErrorSchema,
             404: ApiErrorSchema,
             500: t.Object({ error: t.String(), batchId: t.String() }),
+          },
+        },
+      )
+      .get(
+        "/api/history/batches",
+        async () => ({ batches: backupStore.listRestorableBatches(connectionId) }),
+        {
+          response: t.Object({
+            batches: t.Array(
+              t.Object({
+                id: t.String(),
+                connectionId: t.String(),
+                createdAt: t.String(),
+                status: t.String(),
+                description: t.Nullable(t.String()),
+              }),
+            ),
+          }),
+        },
+      )
+      .get(
+        "/api/history/batches/:batchId/snapshots",
+        async ({ params }) => {
+          const batch = backupStore.getBatch(params.batchId);
+          if (!batch || batch.connectionId !== connectionId) {
+            return status(404, { error: "batch not found" });
+          }
+          if (batch.status !== "confirmed") {
+            return status(409, { error: `batch is ${batch.status}; only confirmed batches are restorable` });
+          }
+          const snapshots = backupStore.getSnapshots(params.batchId);
+          const asCells = (image: Record<string, unknown> | null) =>
+            image === null
+              ? null
+              : (Object.fromEntries(
+                  Object.entries(image).map(([k, v]) => [
+                    k,
+                    typeof v === "boolean" || typeof v === "number" || typeof v === "string"
+                      ? v
+                      : v === null
+                        ? null
+                        : v instanceof Date
+                          ? v.toISOString()
+                          : String(v),
+                  ]),
+                ) as Record<string, string | number | boolean | null>);
+          return {
+            batch,
+            snapshots: snapshots.map(s => ({
+              id: s.id,
+              schema: s.schema,
+              table: s.table,
+              pkValues: s.pkValues,
+              operation: s.operation,
+              beforeImage: asCells(s.beforeImage),
+              afterImage: asCells(s.afterImage ?? null),
+            })),
+          };
+        },
+        {
+          params: t.Object({ batchId: t.String() }),
+          response: {
+            200: t.Object({
+              batch: t.Object({
+                id: t.String(),
+                connectionId: t.String(),
+                createdAt: t.String(),
+                status: t.String(),
+                description: t.Nullable(t.String()),
+              }),
+              snapshots: t.Array(
+                t.Object({
+                  id: t.Integer(),
+                  schema: t.String(),
+                  table: t.String(),
+                  pkValues: t.Array(CellSchema),
+                  operation: t.String(),
+                  beforeImage: t.Union([t.Record(t.String(), CellSchema), t.Null()]),
+                  afterImage: t.Union([t.Record(t.String(), CellSchema), t.Null()]),
+                }),
+              ),
+            }),
+            404: ApiErrorSchema,
+            409: ApiErrorSchema,
+          },
+        },
+      )
+      .post(
+        "/api/history/batches/:batchId/restore",
+        async ({ params }) => {
+          try {
+            const result = await restoreBatch(db, backupStore, {
+              batchId: params.batchId,
+              connectionId,
+            });
+            return result;
+          } catch (error) {
+            if (error instanceof RestoreError) {
+              return status(409, { error: error.message });
+            }
+            return status(500, { error: `restore failed: ${(error as Error).message}` });
+          }
+        },
+        {
+          params: t.Object({ batchId: t.String() }),
+          response: {
+            200: t.Object({
+              batchId: t.String(),
+              restoredDeletes: t.Integer(),
+              restoredInserts: t.Integer(),
+              restoredUpdates: t.Integer(),
+            }),
+            404: ApiErrorSchema,
+            409: ApiErrorSchema,
+            500: ApiErrorSchema,
           },
         },
       )

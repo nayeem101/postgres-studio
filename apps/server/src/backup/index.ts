@@ -27,6 +27,11 @@ export interface SnapshotInput {
    * undo payload); must be omitted for insert (undo = delete by PK).
    */
   beforeImage: Record<string, unknown> | null;
+  /**
+   * Row state after the mutation. Captured for INSERTs via RETURNING so undo
+   * knows which generated row to remove; optional for updates (diff UI).
+   */
+  afterImage?: Record<string, unknown> | null;
 }
 
 export interface BatchRecord {
@@ -35,6 +40,8 @@ export interface BatchRecord {
   createdAt: string;
   status: BatchStatus;
   description: string | null;
+  /** Non-null once rolled back; such batches leave History and cannot re-restore. */
+  restoredAt: string | null;
 }
 
 export class BackupStoreError extends Error {
@@ -85,6 +92,23 @@ export class BackupStore {
       );
       create index if not exists snapshots_batch_idx on snapshots (batch_id);
     `);
+    this.migrate();
+  }
+
+  /** Additive migrations for stores created by older versions. */
+  private migrate(): void {
+    const snapshotColumns = new Set<string>(
+      (this.database.query("pragma table_info(snapshots)").all() as Array<{ name: string }>).map(r => r.name),
+    );
+    if (!snapshotColumns.has("after_image")) {
+      this.database.run("alter table snapshots add column after_image text");
+    }
+    const batchColumns = new Set<string>(
+      (this.database.query("pragma table_info(batches)").all() as Array<{ name: string }>).map(r => r.name),
+    );
+    if (!batchColumns.has("restored_at")) {
+      this.database.run("alter table batches add column restored_at text");
+    }
   }
 
   close(throwOnError = false): void {
@@ -123,8 +147,8 @@ export class BackupStore {
 
     const insert = this.database.query(
       `insert into snapshots
-         (batch_id, table_schema, table_name, pk_values, operation, before_image, created_at)
-       values ($batch, $schema, $table, $pk, $op, $img, $at)`,
+         (batch_id, table_schema, table_name, pk_values, operation, before_image, after_image, created_at)
+       values ($batch, $schema, $table, $pk, $op, $img, $afterImg, $at)`,
     );
 
     const writeAll = this.database.transaction((rows: readonly SnapshotInput[]) => {
@@ -137,6 +161,7 @@ export class BackupStore {
           $pk: JSON.stringify(r.pkValues),
           $op: r.operation,
           $img: r.beforeImage === null ? null : JSON.stringify(r.beforeImage),
+          $afterImg: r.afterImage == null ? null : JSON.stringify(r.afterImage),
           $at: at,
         });
       }
@@ -156,9 +181,18 @@ export class BackupStore {
 
   getBatch(batchId: string): BatchRecord | null {
     const row = this.database
-      .query("select id, connection_id, created_at, status, description from batches where id = $id")
+      .query(
+        "select id, connection_id, created_at, status, description, restored_at from batches where id = $id",
+      )
       .get({ $id: batchId }) as
-      | { id: string; connection_id: string; created_at: string; status: string; description: string | null }
+      | {
+          id: string;
+          connection_id: string;
+          created_at: string;
+          status: string;
+          description: string | null;
+          restored_at: string | null;
+        }
       | null;
     if (!row) return null;
     return {
@@ -167,21 +201,22 @@ export class BackupStore {
       createdAt: row.created_at,
       status: parseStatus(row.status),
       description: row.description,
+      restoredAt: row.restored_at,
     };
   }
 
-  /** History/restore source of truth: confirmed batches only. */
+  /** History/restore source of truth: confirmed batches only, never re-restorable. */
   listRestorableBatches(connectionId?: string): BatchRecord[] {
     const rows = (
       connectionId
         ? this.database
             .query(
-              "select id, connection_id, created_at, status, description from batches where status = 'confirmed' and connection_id = $cid order by created_at desc",
+              "select id, connection_id, created_at, status, description from batches where status = 'confirmed' and restored_at is null and connection_id = $cid order by created_at desc",
             )
             .all({ $cid: connectionId })
         : this.database
             .query(
-              "select id, connection_id, created_at, status, description from batches where status = 'confirmed' order by created_at desc",
+              "select id, connection_id, created_at, status, description from batches where status = 'confirmed' and restored_at is null order by created_at desc",
             )
             .all()
     ) as Array<{ id: string; connection_id: string; created_at: string; status: string; description: string | null }>;
@@ -192,13 +227,26 @@ export class BackupStore {
       createdAt: row.created_at,
       status: parseStatus(row.status),
       description: row.description,
+      restoredAt: null,
     }));
+  }
+
+  /** Stamp a confirmed batch as rolled back so History stops offering it. */
+  markRestored(batchId: string): void {
+    const batch = this.getBatch(batchId);
+    if (!batch) throw new BackupStoreError(`batch ${batchId} not found`);
+    if (batch.status !== "confirmed") {
+      throw new BackupStoreError(`only confirmed batches can be restored (batch is ${batch.status})`);
+    }
+    this.database
+      .query("update batches set restored_at = $at where id = $id")
+      .run({ $at: new Date().toISOString(), $id: batchId });
   }
 
   getSnapshots(batchId: string): Array<SnapshotInput & { id: number }> {
     const rows = this.database
       .query(
-        "select id, table_schema, table_name, pk_values, operation, before_image from snapshots where batch_id = $id order by id",
+        "select id, table_schema, table_name, pk_values, operation, before_image, after_image from snapshots where batch_id = $id order by id",
       )
       .all({ $id: batchId }) as Array<{
       id: number;
@@ -207,6 +255,7 @@ export class BackupStore {
       pk_values: string;
       operation: string;
       before_image: string | null;
+      after_image: string | null;
     }>;
 
     return rows.map(row => ({
@@ -216,6 +265,8 @@ export class BackupStore {
       pkValues: JSON.parse(row.pk_values) as Array<string | number>,
       operation: parseOperation(row.operation),
       beforeImage: row.before_image === null ? null : (JSON.parse(row.before_image) as Record<string, unknown>),
+      afterImage:
+        row.after_image === null ? null : (JSON.parse(row.after_image) as Record<string, unknown>),
     }));
   }
 
@@ -241,12 +292,15 @@ export class BackupStore {
       throw new BackupStoreError(`unknown snapshot operation ${String(r.operation)}`);
     }
     if (r.operation === "insert") {
-      // The row does not exist yet: no PK, no before image.
-      if (r.pkValues.length !== 0) {
-        throw new BackupStoreError("insert snapshots must not carry a pk tuple");
-      }
+      // The row did not exist before: never a before image. PK/after-image are
+      // attached afterwards via RETURNING so undo can target the generated row.
       if (r.beforeImage !== null) {
         throw new BackupStoreError("insert snapshots must not carry a before image");
+      }
+      const hasPk = Array.isArray(r.pkValues) && r.pkValues.length > 0;
+      const hasAfter = r.afterImage != null;
+      if (hasPk !== hasAfter) {
+        throw new BackupStoreError("insert snapshots need pk tuple and after image together");
       }
       return;
     }

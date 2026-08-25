@@ -74,7 +74,7 @@ describe("batch lifecycle", () => {
 });
 
 describe("snapshot capture rules", () => {
-  test("update/delete require before images; insert forbids pk and image", () => {
+  test("update/delete require before images; insert pairs pk with after-image", () => {
     const id = store.beginBatch("conn-1");
     expect(() => store.addSnapshots(id, [updateSnapshot({ beforeImage: null })])).toThrow(
       /require a before image/,
@@ -83,12 +83,25 @@ describe("snapshot capture rules", () => {
       store.addSnapshots(id, [
         { schema: "public", table: "orders", pkValues: [1], operation: "insert", beforeImage: null },
       ]),
-    ).toThrow(/must not carry a pk/);
+    ).toThrow(/pk tuple and after image together/);
     expect(() =>
       store.addSnapshots(id, [
         { schema: "public", table: "orders", pkValues: [], operation: "insert", beforeImage: { x: 1 } },
       ]),
     ).toThrow(/must not carry a before image/);
+    // RETURNING-based capture: generated rows undo via pk + after-image.
+    expect(() =>
+      store.addSnapshots(id, [
+        {
+          schema: "public",
+          table: "orders",
+          pkValues: [7],
+          operation: "insert",
+          beforeImage: null,
+          afterImage: { id: 7 },
+        },
+      ]),
+    ).not.toThrow();
   });
 
   test("capture is atomic: one bad record rolls back the whole batch payload", () => {
